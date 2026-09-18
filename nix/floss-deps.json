@@ -1,0 +1,22 @@
+{
+  "common-mk": {
+    "url": "https://chromium.googlesource.com/chromiumos/platform2/+archive/d014d561eaf5ece08166edd98b10c145ef81312d/common-mk.tar.gz",
+    "hash": "sha256-8IK7Us6e0+dc9BEh8KUc5E+llnjjsTYvAd1YfgiX1q0="
+  },
+  "system-api": {
+    "url": "https://chromium.googlesource.com/chromiumos/platform2/+archive/d014d561eaf5ece08166edd98b10c145ef81312d/system_api.tar.gz",
+    "hash": "sha256-ev6XhSdKZh2zHgg2ZvG5fyFzpjHV62j8nAdeR5/b4Ns="
+  },
+  "libchrome": {
+    "url": "https://chromium.googlesource.com/chromiumos/platform/libchrome/+archive/0519670b5b553bdb42e22d05448358a312c5e78e.tar.gz",
+    "hash": "sha256-+sWRqHEXV/VAZK0kX8WnT0c4Wwd1LYJ4ZSUnkf351c0="
+  },
+  "modp-b64": {
+    "url": "https://chromium.googlesource.com/aosp/platform/external/modp_b64/+archive/68a503fff7af8fbf6f78cd496830813d41150817.tar.gz",
+    "hash": "sha256-q73FLk6Rs8tb5CmfxgVpOUErJZ93EZnFS8RfUwIZsYI="
+  },
+  "proto-logging": {
+    "url": "https://android.googlesource.com/platform/frameworks/proto_logging/+archive/73db26eb739bfd6bdcb6ef1498edb64b16b6e409/stats/enums/bluetooth.tar.gz",
+    "hash": "sha256-fP5suihpomSuGoBsnGHvmrkSw9ahsQgqpOkULChIU0c="
+  }
+}

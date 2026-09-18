@@ -1,0 +1,102 @@
+--- a/cxxbridge.gni
++++ b/cxxbridge.gni
+@@ -55,11 +55,12 @@
+   action(action_name) {
+     script = "//common-mk/file_generator_wrapper.py"
+     outformat = "${target_gen_dir}/rust/cxx.h"
++    outformat_arg = rebase_path(outformat, root_build_dir)
+     args = [
+       "cxxbridge",
+       "--header",
+       "--output",
+-      outformat,
++      outformat_arg,
+     ]
+     outputs = [ outformat ]
+   }
+--- a/proto_library.gni
++++ b/proto_library.gni
+@@ -101,15 +101,14 @@
+     }
+ 
+     cc_dir = "${root_gen_dir}/${proto_out_dir}"
+-    proto_in_dir = rebase_path(proto_in_dir)
+-    proto_out_dir = rebase_path(proto_out_dir)
++    cc_dir_arg = rebase_path(cc_dir, root_build_dir)
+ 
+     proto_lib_dirs = [
+-      proto_in_dir,
++      rebase_path(proto_in_dir, root_build_dir),
+       "${sysroot}/usr/share/proto",
+     ]
+     if (defined(invoker.proto_lib_dirs)) {
+-      proto_lib_dirs += rebase_path(invoker.proto_lib_dirs)
++      proto_lib_dirs += rebase_path(invoker.proto_lib_dirs, root_build_dir)
+     }
+ 
+     if (!defined(gen_python)) {
+@@ -145,7 +144,7 @@
+       python_dir = "${root_gen_dir}/${proto_out_dir}/py"
+       args += [
+         "--python_out",
+-        "${python_dir}",
++        rebase_path(python_dir, root_build_dir),
+       ]
+       foreach(source, sources) {
+         source = rebase_path(source, proto_in_dir)
+@@ -155,19 +154,19 @@
+     }
+     if (gen_grpc) {
+       if (gen_grpc_gmock) {
+-        args += [ "--grpc_out=generate_mock_code=true:${cc_dir}" ]
++        args += [ "--grpc_out=generate_mock_code=true:${cc_dir_arg}" ]
+         foreach(source, sources) {
+           source = rebase_path(source, proto_in_dir)
+           source = string_replace(source, ".proto", "")
+           outputs += [ "${cc_dir}/${source}_mock.grpc.pb.h" ]
+         }
+       } else {
+-        args += [ "--grpc_out=${cc_dir}" ]
++        args += [ "--grpc_out=${cc_dir_arg}" ]
+       }
+       grpc_cpp_plugin = "/usr/bin/grpc_cpp_plugin"
+       args += [
+         "--plugin=protoc-gen-grpc=${grpc_cpp_plugin}",
+-        "--cpp_out=${gen_cpp_mode}${cc_dir}",
++        "--cpp_out=${gen_cpp_mode}${cc_dir_arg}",
+       ]
+       foreach(source, sources) {
+         source = rebase_path(source, proto_in_dir)
+@@ -181,7 +180,7 @@
+       }
+     }
+     if (!gen_grpc && !gen_python) {
+-      args += [ "--cpp_out=${gen_cpp_mode}${cc_dir}" ]
++      args += [ "--cpp_out=${gen_cpp_mode}${cc_dir_arg}" ]
+       foreach(source, sources) {
+         source = rebase_path(source, proto_in_dir)
+         source = string_replace(source, ".proto", "")
+@@ -292,12 +291,12 @@
+     # Build protoc command line to run.
+     script = "//common-mk/file_generator_wrapper.py"
+     proto_lib_dirs = [
+-      proto_in_dir,
++      rebase_path(proto_in_dir, root_build_dir),
+       "${sysroot}/usr/share/proto",
+     ]
+ 
+     if (defined(invoker.proto_lib_dirs)) {
+-      proto_lib_dirs += rebase_path(invoker.proto_lib_dirs)
++      proto_lib_dirs += rebase_path(invoker.proto_lib_dirs, root_build_dir)
+     }
+ 
+     go_plugin_parameters = []
+@@ -366,7 +365,7 @@
+     # Build protoc command line to run.
+     script = "//common-mk/file_generator_wrapper.py"
+     proto_lib_dirs = [
+-      proto_in_dir,
++      rebase_path(proto_in_dir, root_build_dir),
+       "/usr/include/proto",
+     ]
+ 

@@ -1,0 +1,1565 @@
+diff --git a/flags/aconfig.gni b/flags/aconfig.gni
+index 2f5c2a1eb0..6c0168c3dc 100644
+--- a/flags/aconfig.gni
++++ b/flags/aconfig.gni
+@@ -23,14 +23,16 @@ template("aconfig") {
+   assert(defined(invoker.sources), "sources must be set")
+   assert(defined(invoker.package), "package must be set")
+ 
+-  outdir = rebase_path(target_gen_dir)
++  # GN paths belong in declarations; generator arguments are relative to the
++  # build directory where action commands execute.
++  outdir = rebase_path(target_gen_dir, root_build_dir)
+ 
+   aconfig_cpp_file_name = string_replace(invoker.package, ".", "_")
+ 
+   aconfig_declarations = []
+ 
+   foreach(source, invoker.sources) {
+-    source = rebase_path(source)
++    source = rebase_path(source, root_build_dir)
+     aconfig_declarations += [ "--declarations=${source}" ]
+   }
+ 
+@@ -46,7 +48,7 @@ template("aconfig") {
+            ] + aconfig_declarations
+ 
+     sources = invoker.sources
+-    outputs = [ "${outdir}/${aconfig_cache}" ]
++    outputs = [ "${target_gen_dir}/${aconfig_cache}" ]
+   }
+ 
+   action("${target_name}_cpp") {
+@@ -59,8 +61,8 @@ template("aconfig") {
+     ]
+ 
+     outputs = [
+-      "${outdir}/include/${aconfig_cpp_file_name}.h",
+-      "${outdir}/${aconfig_cpp_file_name}.cc",
++      "${target_gen_dir}/include/${aconfig_cpp_file_name}.h",
++      "${target_gen_dir}/${aconfig_cpp_file_name}.cc",
+     ]
+ 
+     deps = [ ":${aconfig_cache}" ]
+@@ -68,11 +70,11 @@ template("aconfig") {
+ 
+   all_dependent_config_name = "_${target_name}_all_dependent_config"
+   config(all_dependent_config_name) {
+-    include_dirs = [ "${outdir}/include" ]
++    include_dirs = [ "${target_gen_dir}/include" ]
+   }
+ 
+   static_library(target_name) {
+-    sources = [ "${outdir}/${aconfig_cpp_file_name}.cc" ]
++    sources = [ "${target_gen_dir}/${aconfig_cpp_file_name}.cc" ]
+     deps = [ ":${target_name}_cpp" ] + invoker.deps
+     all_dependent_configs = [ ":${all_dependent_config_name}" ]
+   }
+diff --git a/sysprop/sysprop.gni b/sysprop/sysprop.gni
+index bbf5af4dbf..e809ae0064 100644
+--- a/sysprop/sysprop.gni
++++ b/sysprop/sysprop.gni
+@@ -21,6 +21,8 @@
+ template("sysprop") {
+   assert(defined(invoker.sources), "sources must be set")
+ 
++  # Only command arguments use filesystem paths. Keep outputs/include_dirs in
++  # GN's source-absolute namespace, including for out-of-tree build directories.
+   outdir = rebase_path(target_gen_dir, root_build_dir)
+ 
+   action_foreach("${target_name}_sources") {
+diff --git a/system/audio_hal_interface/a2dp_encoding_host.cc b/system/audio_hal_interface/a2dp_encoding_host.cc
+index 74e9ca38d9..092b1634c1 100644
+--- a/system/audio_hal_interface/a2dp_encoding_host.cc
++++ b/system/audio_hal_interface/a2dp_encoding_host.cc
+@@ -14,6 +14,9 @@
+  * limitations under the License.
+  */
+ 
++#include <mutex>
++#include <atomic>
++
+ #include "a2dp_encoding_host.h"
+ 
+ #include <bluetooth/log.h>
+@@ -24,6 +27,8 @@
+ #include <vector>
+ 
+ #include "a2dp_encoding.h"
++#include <mutex>
++#include "audio_hal_interface/a2dp_encoding_host.h"
+ #include "btif/include/btif_a2dp_source.h"
+ #include "btif/include/btif_av.h"
+ #include "btif/include/btif_hf.h"
+@@ -104,7 +109,9 @@ static void a2dp_data_path_open() {
+   }
+ }
+ 
+-tA2DP_CTRL_CMD a2dp_pending_cmd_ = A2DP_CTRL_CMD_NONE;
++std::atomic<tA2DP_CTRL_CMD> a2dp_pending_cmd_{A2DP_CTRL_CMD_NONE};
++std::mutex position_mutex_;
++uint64_t position_generation_;
+ uint64_t total_bytes_read_;
+ timespec data_position_;
+ uint16_t remote_delay_report_;
+@@ -116,6 +123,23 @@ namespace audio {
+ namespace a2dp {
+ 
+ // Invoked by audio server to set audio config (PCM for now)
++namespace {
++std::mutex pcm_config_mutex;
++PcmConfig pcm_config;
++}
++void UpdatePcmConfig(uint32_t rate, uint8_t bits, uint8_t channels) {
++  std::lock_guard<std::mutex> lock(pcm_config_mutex);
++  ++pcm_config.generation;
++  pcm_config.ready = rate != 0 && bits != 0 && channels != 0;
++  pcm_config.sample_rate = rate;
++  pcm_config.bits_per_sample = bits;
++  pcm_config.channels_count = channels;
++}
++PcmConfig GetPcmConfig() {
++  std::lock_guard<std::mutex> lock(pcm_config_mutex);
++  return pcm_config;
++}
++
+ bool SetAudioConfig(AudioConfig config) {
+   btav_a2dp_codec_config_t codec_config;
+   codec_config.sample_rate = config.sample_rate;
+@@ -127,17 +151,12 @@ bool SetAudioConfig(AudioConfig config) {
+ 
+ // Invoked by audio server when it has audio data to stream.
+ bool StartRequest() {
+-  // Reset total read bytes and timestamp to avoid confusing audio
+-  // server at delay calculation.
+-  total_bytes_read_ = 0;
+-  data_position_ = {0, 0};
+-
+   // Check if a previous request is not finished
+   if (a2dp_pending_cmd_ == A2DP_CTRL_CMD_START) {
+     log::info("A2DP_CTRL_CMD_START in progress");
+     return false;
+   } else if (a2dp_pending_cmd_ != A2DP_CTRL_CMD_NONE) {
+-    log::warn("busy in pending_cmd={}", a2dp_pending_cmd_);
++    log::warn("busy in pending_cmd={}", a2dp_pending_cmd_.load());
+     return false;
+   }
+ 
+@@ -153,6 +172,13 @@ bool StartRequest() {
+     return true;
+   }
+   if (btif_av_stream_ready(A2dpType::kSource)) {
++    // A rejected/duplicate start must not reset another stream's counters.
++    {
++      std::lock_guard<std::mutex> lock(position_mutex_);
++      ++position_generation_;
++      total_bytes_read_ = 0;
++      data_position_ = {};
++    }
+     a2dp_data_path_open();
+     /*
+      * Post start event and wait for audio path to open.
+@@ -187,7 +213,7 @@ bool StopRequest() {
+ 
+ bool SuspendRequest() {
+   if (a2dp_pending_cmd_ != A2DP_CTRL_CMD_NONE) {
+-    log::warn("busy in pending_cmd={}", a2dp_pending_cmd_);
++    log::warn("busy in pending_cmd={}", a2dp_pending_cmd_.load());
+     return false;
+   }
+   if (!btif_av_stream_started_ready(A2dpType::kSource)) {
+@@ -202,6 +228,7 @@ bool SuspendRequest() {
+ 
+ // Invoked by audio server to check audio presentation position periodically.
+ PresentationPosition GetPresentationPosition() {
++  std::lock_guard<std::mutex> lock(position_mutex_);
+   PresentationPosition presentation_position{
+           .remote_delay_report_ns = remote_delay_report_ * 100000u,
+           .total_bytes_read = total_bytes_read_,
+@@ -211,7 +238,10 @@ PresentationPosition GetPresentationPosition() {
+ }
+ 
+ // delay reports from AVDTP is based on 1/10 ms (100us)
+-void set_remote_delay(uint16_t delay_report) { remote_delay_report_ = delay_report; }
++void set_remote_delay(uint16_t delay_report) {
++  std::lock_guard<std::mutex> lock(position_mutex_);
++  remote_delay_report_ = delay_report;
++}
+ 
+ // Inform audio server about offloading codec; not used for now
+ bool update_codec_offloading_capabilities(
+@@ -237,9 +267,13 @@ bool init(bluetooth::common::MessageLoopThread* /*message_loop*/,
+     cleanup();
+   }
+   a2dp_uipc = UIPC_Init();
+-  total_bytes_read_ = 0;
+-  data_position_ = {};
+-  remote_delay_report_ = 0;
++  {
++    std::lock_guard<std::mutex> lock(position_mutex_);
++    ++position_generation_;
++    total_bytes_read_ = 0;
++    data_position_ = {};
++    remote_delay_report_ = 0;
++  }
+   stream_callbacks_ = strean_callbacks;
+ 
+   return true;
+@@ -271,7 +305,7 @@ void end_session() {
+   // TODO: Notify server; or do we handle it during disconnected?
+ 
+   // Reset remote delay. New value will be set when new session starts.
+-  remote_delay_report_ = 0;
++  set_remote_delay(0);
+ 
+   a2dp_pending_cmd_ = A2DP_CTRL_CMD_NONE;
+ }
+@@ -294,7 +328,14 @@ size_t read(uint8_t* p_buf, uint32_t len) {
+   if (a2dp_uipc == nullptr) {
+     return 0;
+   }
++  uint64_t generation;
++  {
++    std::lock_guard<std::mutex> lock(position_mutex_);
++    generation = position_generation_;
++  }
+   bytes_read = UIPC_Read(*a2dp_uipc, UIPC_CH_ID_AV_AUDIO, p_buf, len);
++  std::lock_guard<std::mutex> lock(position_mutex_);
++  if (generation != position_generation_) return bytes_read;
+   total_bytes_read_ += bytes_read;
+   // MONOTONIC_RAW isn't affected by NTP, audio stack rely on this
+   // to get precise delay calculation.
+diff --git a/system/audio_hal_interface/a2dp_encoding_host.h b/system/audio_hal_interface/a2dp_encoding_host.h
+index 835d50f022..900c878a53 100644
+--- a/system/audio_hal_interface/a2dp_encoding_host.h
++++ b/system/audio_hal_interface/a2dp_encoding_host.h
+@@ -25,6 +25,17 @@ namespace bluetooth {
+ namespace audio {
+ namespace a2dp {
+ 
++// Snapshot of the actual initialized software encoder feeder, not capabilities.
++struct PcmConfig {
++  bool ready = false;
++  uint32_t sample_rate = 0;
++  uint8_t bits_per_sample = 0;
++  uint8_t channels_count = 0;
++  uint64_t generation = 0;
++};
++void UpdatePcmConfig(uint32_t sample_rate, uint8_t bits_per_sample, uint8_t channels_count);
++PcmConfig GetPcmConfig();
++
+ // Audio config from audio server; PCM format for now
+ struct AudioConfig {
+   btav_a2dp_codec_sample_rate_t sample_rate = BTAV_A2DP_CODEC_SAMPLE_RATE_48000;
+diff --git a/system/bta/ag/bta_ag_sco.cc b/system/bta/ag/bta_ag_sco.cc
+index a5cc30f41b..a2204b6ab5 100644
+--- a/system/bta/ag/bta_ag_sco.cc
++++ b/system/bta/ag/bta_ag_sco.cc
+@@ -632,8 +632,10 @@ static void bta_ag_codec_negotiation_timer_cback(void* data) {
+   /* Announce that codec negotiation failed. */
+   bta_ag_sco_codec_nego(p_scb, false);
+ 
+-  /* call app callback */
++#if !TARGET_FLOSS
++  /* Floss's CODEC close transition reports all negotiation failures once. */
+   bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_CLOSE_EVT);
++#endif
+ }
+ 
+ /*******************************************************************************
+@@ -832,8 +834,17 @@ static void bta_ag_sco_event(tBTA_AG_SCB* p_scb, uint8_t event) {
+           break;
+ 
+         case BTA_AG_SCO_CLOSE_E:
+-          /* sco open is not started yet. just go back to listening */
++#if TARGET_FLOSS
++          if (p_sco->p_curr_scb != p_scb) break;
++          // No controller link exists yet, so no later AudioClose callback
++          // can complete this accepted request. Cancel its codec timer now.
++          alarm_cancel(p_scb->codec_negotiation_timer);
++#endif
+           p_sco->state = BTA_AG_SCO_LISTEN_ST;
++#if TARGET_FLOSS
++          bta_ag_create_sco(p_scb, false);
++          bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_CLOSE_EVT);
++#endif
+           break;
+ 
+         case BTA_AG_SCO_CONN_CLOSE_E:
+@@ -1294,6 +1305,10 @@ void bta_ag_sco_listen(tBTA_AG_SCB* p_scb, const tBTA_AG_DATA& /* data */) {
+ void bta_ag_sco_open(tBTA_AG_SCB* p_scb, const tBTA_AG_DATA& data) {
+   if (!sco_allowed) {
+     log::info("not opening sco, by policy");
++#if TARGET_FLOSS
++    // ConnectAudio already reported Connecting to the client.
++    bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_CLOSE_EVT);
++#endif
+     return;
+   }
+ 
+@@ -1359,6 +1374,11 @@ void bta_ag_sco_close(tBTA_AG_SCB* p_scb, const tBTA_AG_DATA& /* data */) {
+  *
+  ******************************************************************************/
+ void bta_ag_sco_codec_nego(tBTA_AG_SCB* p_scb, bool result) {
++#if TARGET_FLOSS
++  if (bta_ag_cb.sco.state != BTA_AG_SCO_CODEC_ST || bta_ag_cb.sco.p_curr_scb != p_scb) {
++    return;  // Late reply/timeout for a cancelled negotiation.
++  }
++#endif
+   if (result) {
+     /* Subsequent SCO connection will skip codec negotiation */
+     log::info("Succeeded for index 0x{:04x}, device {}", p_scb->sco_idx, p_scb->peer_addr);
+diff --git a/system/bta/bundler.gni b/system/bta/bundler.gni
+index 2942bbee1d..9cf5bfaf38 100644
+--- a/system/bta/bundler.gni
++++ b/system/bta/bundler.gni
+@@ -37,11 +37,11 @@ template("bt_flatc_binary_schema") {
+     args = [
+       binfile,
+       "-I",
+-      "${include_dir}",
++      rebase_path(include_dir, root_build_dir),
+       "-b",
+       "--schema",
+       "-o",
+-      "${target_gen_dir}",
++      rebase_path(target_gen_dir, root_build_dir),
+     ]
+ 
+     bfbs_names = []
+@@ -49,16 +49,16 @@ template("bt_flatc_binary_schema") {
+     outputs = []
+ 
+     foreach(s, sources) {
+-      srclist += [ rebase_path(s) ]
++      srclist += [ rebase_path(s, root_build_dir) ]
+ 
+       # bfbs get generated into ${target_gen_root} directory
+       name = string_replace(get_path_info(s, "file"), ".fbs", ".bfbs")
+-      bfbs_names += [ "${target_gen_dir}/${name}" ]
++      bfbs_names += [ rebase_path("${target_gen_dir}/${name}", root_build_dir) ]
+       outputs += [ "${target_gen_dir}/${name}" ]
+ 
+-      # headers get generated ito subdirectories based on relative path
++      # flatc writes headers beside the binary schema, using the source basename.
+       if (gen_header) {
+-        header_name = string_replace(s, ".fbs", "_generated.h")
++        header_name = string_replace(get_path_info(s, "file"), ".fbs", "_generated.h")
+         outputs += [ "${target_gen_dir}/${header_name}" ]
+       }
+     }
+@@ -123,11 +123,11 @@ template("bt_flatc_bundler") {
+     foreach(s, deps) {
+       name = get_label_info(s, "name")
+       gen_dir = get_label_info(s, "target_gen_dir")
+-      files_list += [ "${gen_dir}/${name}.files" ]
++      files_list += [ rebase_path("${gen_dir}/${name}.files", root_build_dir) ]
+     }
+ 
+     script = "//bt/system/gd/dumpsys/bundler/extract_files_and_call.py"
+-    binfile = "${root_out_dir}/bluetooth_flatbuffer_bundler"
++    binfile = rebase_path(root_out_dir, root_build_dir) + "/bluetooth_flatbuffer_bundler"
+     args = files_list
+     args += [
+       "--",
+@@ -140,7 +140,7 @@ template("bt_flatc_bundler") {
+       "-n",
+       "${invoker.namespace}",
+       "-g",
+-      "${target_gen_dir}",
++      rebase_path(target_gen_dir, root_build_dir),
+     ]
+ 
+     outputs = [
+diff --git a/system/bta/dm/bta_dm_device_search_int.h b/system/bta/dm/bta_dm_device_search_int.h
+index 35d41f1d2c..3a6cbc3e20 100644
+--- a/system/bta/dm/bta_dm_device_search_int.h
++++ b/system/bta/dm/bta_dm_device_search_int.h
+@@ -19,6 +19,7 @@
+ #include <bluetooth/log.h>
+ 
+ #include <string>
++#include <variant>
+ 
+ #include "bta/include/bta_api.h"
+ #include "macros.h"
+diff --git a/system/bta/dm/bta_dm_disc_int.h b/system/bta/dm/bta_dm_disc_int.h
+index f0feb35d1b..932e5001c7 100644
+--- a/system/bta/dm/bta_dm_disc_int.h
++++ b/system/bta/dm/bta_dm_disc_int.h
+@@ -20,6 +20,7 @@
+ 
+ #include <queue>
+ #include <string>
++#include <variant>
+ 
+ #include "bta/dm/bta_dm_device_search_int.h"
+ #include "bta/include/bta_api.h"
+diff --git a/system/bta/has/has_ctp.h b/system/bta/has/has_ctp.h
+index 4b62426f97..134e75469d 100644
+--- a/system/bta/has/has_ctp.h
++++ b/system/bta/has/has_ctp.h
+@@ -18,6 +18,7 @@
+ #pragma once
+ 
+ #include <bluetooth/log.h>
++#include <variant>
+ 
+ #include <algorithm>
+ #include <list>
+diff --git a/system/bta/include/bta_has_api.h b/system/bta/include/bta_has_api.h
+index 4abf10d6dc..70973fc32f 100644
+--- a/system/bta/include/bta_has_api.h
++++ b/system/bta/include/bta_has_api.h
+@@ -18,6 +18,7 @@
+ #pragma once
+ 
+ #include <base/functional/callback.h>
++#include <variant>
+ 
+ #include <string>
+ 
+diff --git a/system/bta/include/bta_vc_api.h b/system/bta/include/bta_vc_api.h
+index 4a4ae893b4..74b05c0fc6 100644
+--- a/system/bta/include/bta_vc_api.h
++++ b/system/bta/include/bta_vc_api.h
+@@ -18,6 +18,7 @@
+ #pragma once
+ 
+ #include <aics/api.h>
++#include <variant>
+ #include <hardware/bt_vc.h>
+ 
+ #include <string>
+diff --git a/system/btif/include/btif_av.h b/system/btif/include/btif_av.h
+index 051e8e40b4..267172bac0 100644
+--- a/system/btif/include/btif_av.h
++++ b/system/btif/include/btif_av.h
+@@ -350,4 +350,8 @@ bool btif_av_peer_is_sink(const RawAddress& peer_address);
+ bool btif_av_peer_is_source(const RawAddress& peer_address);
+ const RawAddress& btif_av_find_by_handle(tBTA_AV_HNDL bta_handle);
+ 
++// Select an idle peer or adopt an already streaming exact peer for a Floss lease.
++// A source streaming to any other address is never replaced.
++bool btif_av_source_select_audio_peer(const RawAddress& peer_address);
++
+ #endif /* BTIF_AV_H */
+diff --git a/system/btif/src/btif_a2dp_source.cc b/system/btif/src/btif_a2dp_source.cc
+index 25a5fe7093..8f00926e10 100644
+--- a/system/btif/src/btif_a2dp_source.cc
++++ b/system/btif/src/btif_a2dp_source.cc
+@@ -21,6 +21,9 @@
+ #define ATRACE_TAG ATRACE_TAG_AUDIO
+ 
+ #include "btif_a2dp_source.h"
++#if defined(TARGET_FLOSS)
++#include "audio_hal_interface/a2dp_encoding_host.h"
++#endif
+ 
+ #include <base/functional/bind.h>
+ #include <bluetooth/log.h>
+@@ -652,6 +655,9 @@ static uint16_t btif_a2dp_get_peer_mtu(A2dpCodecConfig* a2dp_config) {
+ }
+ 
+ static void btif_a2dp_source_setup_codec(const RawAddress& peer_address) {
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
+   log::info("peer_address={} state={}", peer_address, btif_a2dp_source_cb.StateStr());
+ 
+   tA2DP_ENCODER_INIT_PEER_PARAMS peer_params;
+diff --git a/system/btif/src/btif_av.cc b/system/btif/src/btif_av.cc
+index e4f784a39c..463e63fa24 100644
+--- a/system/btif/src/btif_av.cc
++++ b/system/btif/src/btif_av.cc
+@@ -28,12 +28,14 @@
+ #include <stdio.h>
+ 
+ #include <chrono>
++#include <atomic>
+ #include <cstdint>
+ #include <cstdio>
+ #include <cstring>
+ #include <future>
+ #include <ios>
+ #include <map>
++#include <memory>
+ #include <mutex>
+ #include <optional>
+ #include <set>
+@@ -4151,3 +4153,37 @@ void btif_av_connect_sink_delayed(uint8_t handle, const RawAddress& peer_address
+     btif_av_source_dispatch_sm_event(peer_address, BTIF_AV_AVRCP_OPEN_EVT);
+   }
+ }
++
++// Called by the Floss RPC thread, never the stack main thread. Selection and
++// admission are evaluated together there, before changing the previous peer.
++bool btif_av_source_select_audio_peer(const RawAddress& peer_address) {
++  auto cancelled = std::make_shared<std::atomic<bool>>(false);
++  std::promise<void> ready;
++  auto ready_future = ready.get_future();
++  std::promise<bool> accepted;
++  auto accepted_future = accepted.get_future();
++  if (do_in_main_thread(base::BindOnce(
++          [](std::shared_ptr<std::atomic<bool>> cancelled, RawAddress address,
++             std::promise<void> ready, std::promise<bool> accepted) {
++            if (cancelled->load() || !btif_av_source.Enabled()) {
++              ready.set_value();
++              accepted.set_value(false);
++              return;
++            }
++            // An unleased remote START may race the desktop's reservation.
++            // Adopt only that exact peer; never steal another active stream.
++            if (btif_av_stream_started_ready(A2dpType::kSource)) {
++              ready.set_value();
++              accepted.set_value(btif_av_source_active_peer() == address);
++              return;
++            }
++            accepted.set_value(btif_av_source.SetActivePeer(address, std::move(ready)));
++          }, cancelled, peer_address, std::move(ready), std::move(accepted))) != BT_STATUS_SUCCESS) return false;
++  if (accepted_future.wait_for(std::chrono::seconds(1)) != std::future_status::ready) {
++    cancelled->store(true);
++    return false;  // No START can be issued after failed selection.
++  }
++  const bool result = accepted_future.get();
++  if (ready_future.wait_for(std::chrono::seconds(1)) != std::future_status::ready) return false;
++  return result;
++}
+diff --git a/system/gd/hal/ranging_hal.h b/system/gd/hal/ranging_hal.h
+index b22378970e..7c54dccde1 100644
+--- a/system/gd/hal/ranging_hal.h
++++ b/system/gd/hal/ranging_hal.h
+@@ -17,6 +17,7 @@
+ #pragma once
+ 
+ #include <complex>
++#include <variant>
+ 
+ #include "hci/hci_packets.h"
+ #include "module.h"
+diff --git a/system/gd/hal/socket_hal.h b/system/gd/hal/socket_hal.h
+index 3922e29da0..8ead67c975 100644
+--- a/system/gd/hal/socket_hal.h
++++ b/system/gd/hal/socket_hal.h
+@@ -17,6 +17,7 @@
+ #pragma once
+ 
+ #include <cstdint>
++#include <variant>
+ 
+ #include "module.h"
+ 
+diff --git a/system/gd/hci/command_interface.h b/system/gd/hci/command_interface.h
+index a6781ef7c5..84c52e95bf 100644
+--- a/system/gd/hci/command_interface.h
++++ b/system/gd/hci/command_interface.h
+@@ -16,6 +16,8 @@
+ 
+ #pragma once
+ 
++#include <variant>
++
+ #include "common/contextual_callback.h"
+ #include "hci/hci_packets.h"
+ #include "os/handler.h"
+diff --git a/system/gd/os/linux/system_properties.cc b/system/gd/os/linux/system_properties.cc
+index 16e474c8d2..141dd6447b 100644
+--- a/system/gd/os/linux/system_properties.cc
++++ b/system/gd/os/linux/system_properties.cc
+@@ -24,35 +24,45 @@ namespace bluetooth {
+ namespace os {
+ 
+ namespace {
+-std::mutex properties_mutex;
++// L2CAP queries properties from a global constructor. Initialize on first use
++// so these queries cannot observe an unconstructed unordered_map.
++struct PropertyState {
++  std::mutex mutex;
++  std::unordered_map<std::string, std::string> values = {
++          {"bluetooth.profile.avrcp.target.enabled", "true"},
++          {"bluetooth.gd.start_timeout", "12000"},
++          {"bluetooth.gd.stop_timeout", "12000"},
++          /* HCI Reset timeout: 10s + Default cleanup timeout: 1s = 11s */
++          {"bluetooth.cleanup_timeout", "11000"}};
++};
+ 
+-// Properties set along with some default values for Floss.
+-std::unordered_map<std::string, std::string> properties = {
+-        {"bluetooth.profile.avrcp.target.enabled", "true"},
+-        {"bluetooth.gd.start_timeout", "12000"},
+-        {"bluetooth.gd.stop_timeout", "12000"},
+-        /* HCI Reset timeout: 10s + Default cleanup timeout: 1s = 11s */
+-        {"bluetooth.cleanup_timeout", "11000"}};
++PropertyState& GetPropertyState() {
++  static PropertyState state;
++  return state;
++}
+ }  // namespace
+ 
+ std::optional<std::string> GetSystemProperty(const std::string& property) {
+-  std::lock_guard<std::mutex> lock(properties_mutex);
+-  auto iter = properties.find(property);
+-  if (iter == properties.end()) {
++  auto& state = GetPropertyState();
++  std::lock_guard<std::mutex> lock(state.mutex);
++  auto iter = state.values.find(property);
++  if (iter == state.values.end()) {
+     return std::nullopt;
+   }
+   return iter->second;
+ }
+ 
+ bool SetSystemProperty(const std::string& property, const std::string& value) {
+-  std::lock_guard<std::mutex> lock(properties_mutex);
+-  properties.insert_or_assign(property, value);
++  auto& state = GetPropertyState();
++  std::lock_guard<std::mutex> lock(state.mutex);
++  state.values.insert_or_assign(property, value);
+   return true;
+ }
+ 
+ bool ClearSystemPropertiesForHost() {
+-  std::lock_guard<std::mutex> lock(properties_mutex);
+-  properties.clear();
++  auto& state = GetPropertyState();
++  std::lock_guard<std::mutex> lock(state.mutex);
++  state.values.clear();
+   return true;
+ }
+ 
+diff --git a/system/gd/packet/parser/bison.gni b/system/gd/packet/parser/bison.gni
+index b52541b32f..684ef1a7cd 100644
+--- a/system/gd/packet/parser/bison.gni
++++ b/system/gd/packet/parser/bison.gni
+@@ -36,12 +36,13 @@ template("bison_source") {
+ 
+     script = "//common-mk/file_generator_wrapper.py"
+     outprefix = "${target_gen_dir}/{{source_name_part}}"
++    outprefix_arg = rebase_path(outprefix, root_build_dir)
+     args = [
+       "bison",
+       "--language=c++",
+-      "--defines=${outprefix}.h",
++      "--defines=${outprefix_arg}.h",
+       "-o",
+-      "${outprefix}.cc",
++      "${outprefix_arg}.cc",
+       "{{source}}",
+     ]
+     outputs = [
+diff --git a/system/gd/packet/parser/flex.gni b/system/gd/packet/parser/flex.gni
+index b87f263f95..3b4fd28161 100644
+--- a/system/gd/packet/parser/flex.gni
++++ b/system/gd/packet/parser/flex.gni
+@@ -39,7 +39,7 @@ template("flex_source") {
+     args = [
+       "flex",
+       "-o",
+-      outformat,
++      rebase_path(outformat, root_build_dir),
+       "{{source}}",
+     ]
+     outputs = [ outformat ]
+diff --git a/system/gd/packet/parser/packetgen.gni b/system/gd/packet/parser/packetgen.gni
+index eee0d8b94e..1e33f356b9 100644
+--- a/system/gd/packet/parser/packetgen.gni
++++ b/system/gd/packet/parser/packetgen.gni
+@@ -32,23 +32,23 @@ template("packetgen_headers") {
+     assert(defined(include), "include must be set")
+     assert(defined(source_root), "source root must be set")
+ 
+-    outdir = rebase_path(root_gen_dir)
+-    source_root = rebase_path(source_root)
++    outdir = rebase_path(root_gen_dir, root_build_dir)
++    source_root_arg = rebase_path(source_root, root_build_dir)
+ 
+     script = "//common-mk/file_generator_wrapper.py"
+-    binfile = "${root_out_dir}/bluetooth_packetgen"
++    binfile = rebase_path(root_out_dir, root_build_dir) + "/bluetooth_packetgen"
+     args = [
+       binfile,
+       "--include=${include}",
+       "--out=${outdir}",
+-      "--source_root=${source_root}",
++      "--source_root=${source_root_arg}",
+     ]
+ 
+     outputs = []
+     foreach (source, sources) {
+-      rel_source = rebase_path(source, ".")
++      rel_source = rebase_path(source, "${source_root}/${include}")
+       args += [ rebase_path(source, source_root) ]
+-      outputs += [ string_replace("${outdir}/${rel_source}.h", ".pdl", "") ]
++      outputs += [ string_replace("${root_gen_dir}/${rel_source}.h", ".pdl", "") ]
+     }
+ 
+     all_dependent_configs = [ ":${all_dependent_config_name}" ]
+diff --git a/system/gd/rust/topshim/Cargo.toml b/system/gd/rust/topshim/Cargo.toml
+index 6ff28859bd..4c4e690c58 100644
+--- a/system/gd/rust/topshim/Cargo.toml
++++ b/system/gd/rust/topshim/Cargo.toml
+@@ -24,7 +24,6 @@ build = "build.rs"
+ topshim_macros = { path = "macros" }
+ 
+ cxx = "1.0"
+-grpcio = { version = "0.13.0", default-features = false, features = ["protobufv3-codec", "openssl"] }
+ log = "0.4"
+ num-derive = "0.3"
+ num-traits = "0.2"
+@@ -34,7 +33,9 @@ tokio-stream = "0.1"
+ bitflags ="2.4.0"
+ 
+ [build-dependencies]
+-bindgen = "0.69.4"
++# Keep the UHID and topshim generators on one bindgen runtime feature set.
++# Mixing versions can enable clang-sys runtime loading without bindgen loading it.
++bindgen = "0.71.1"
+ pkg-config = "0.3"
+ 
+ [lib]
+diff --git a/system/gd/rust/topshim/btav/btav_shim.cc b/system/gd/rust/topshim/btav/btav_shim.cc
+index eed0d54190..ef94675ad8 100644
+--- a/system/gd/rust/topshim/btav/btav_shim.cc
++++ b/system/gd/rust/topshim/btav/btav_shim.cc
+@@ -17,11 +17,14 @@
+ #include "rust/topshim/btav/btav_shim.h"
+ 
+ #include <cstdio>
++#include <future>
++#include <chrono>
+ #include <map>
+ #include <memory>
+ 
+ #include "base/functional/callback.h"
+ #include "btif/include/btif_av.h"
++#include "stack/include/main_thread.h"
+ #include "include/hardware/avrcp/avrcp.h"
+ #include "include/hardware/bluetooth.h"
+ #include "rust/cxx.h"
+@@ -289,13 +292,10 @@ std::unique_ptr<A2dpIntf> GetA2dpProfile(const unsigned char* btif) {
+ }
+ 
+ int A2dpIntf::init() const {
+-  btav_a2dp_codec_config_t a2dp_config_sbc{
+-          .codec_type = BTAV_A2DP_CODEC_INDEX_SOURCE_SBC,
+-          .codec_priority = BTAV_A2DP_CODEC_PRIORITY_HIGHEST,
+-          // Using default settings for those untouched fields
+-  };
+-
+-  std::vector<btav_a2dp_codec_config_t> codec_priorities(1, a2dp_config_sbc);
++  // Keep native codec priorities: AAC is preferred when the peer supports it,
++  // with mandatory SBC as fallback. Forcing SBC highest hid the Linux AAC
++  // implementation even when its codec service was enabled.
++  std::vector<btav_a2dp_codec_config_t> codec_priorities;
+   std::vector<btav_a2dp_codec_config_t> b;
+   std::vector<btav_a2dp_codec_info_t> c;
+   return btif_av_source_init(&internal::g_callbacks, 1, codec_priorities, b, &c);
+@@ -328,6 +328,40 @@ bool A2dpIntf::set_audio_config(A2dpCodecConfig rconfig) const {
+   return bluetooth::audio::a2dp::SetAudioConfig(config);
+ }
+ bool A2dpIntf::start_audio_request() const { return bluetooth::audio::a2dp::StartRequest(); }
++bool A2dpIntf::start_audio_for_peer(RawAddress addr) const {
++  if (!btif_av_source_select_audio_peer(addr)) return false;
++  std::promise<bool> result;
++  auto future = result.get_future();
++  if (do_in_main_thread(base::BindOnce([](RawAddress address, std::promise<bool> result) {
++        result.set_value(btif_av_source_active_peer() == address &&
++            bluetooth::audio::a2dp::StartRequest());
++      }, addr, std::move(result))) != BT_STATUS_SUCCESS) return false;
++  // A queued operation may still execute. Retain ownership on timeout so the
++  // client's token cancellation, not a false rejection, settles the session.
++  if (future.wait_for(std::chrono::milliseconds(250)) != std::future_status::ready) return true;
++  return future.get();
++}
++
++bool A2dpIntf::stop_audio_for_peer(RawAddress addr) const {
++  std::promise<bool> result;
++  auto future = result.get_future();
++  if (do_in_main_thread(base::BindOnce([](RawAddress address, std::promise<bool> result) {
++        // A failed pending START has no AudioState callback in legacy native
++        // code. Force an address-scoped profile terminal event in that case.
++        // Never send a global stop to a replacement active peer.
++        if (btif_av_source_active_peer() == address &&
++            btif_av_stream_started_ready(A2dpType::kSource)) {
++          result.set_value(bluetooth::audio::a2dp::StopRequest());
++        } else {
++          result.set_value(btif_av_source_disconnect(address) == BT_STATUS_SUCCESS);
++        }
++      }, addr, std::move(result))) != BT_STATUS_SUCCESS) return false;
++  // A queued operation may still execute. Retain ownership on timeout so the
++  // client's token cancellation, not a false rejection, settles the session.
++  if (future.wait_for(std::chrono::milliseconds(250)) != std::future_status::ready) return true;
++  return future.get();
++}
++
+ bool A2dpIntf::stop_audio_request() const { return bluetooth::audio::a2dp::StopRequest(); }
+ bool A2dpIntf::suspend_audio_request() const { return bluetooth::audio::a2dp::SuspendRequest(); }
+ RustPresentationPosition A2dpIntf::get_presentation_position() const {
+@@ -342,6 +376,41 @@ RustPresentationPosition A2dpIntf::get_presentation_position() const {
+   return rposition;
+ }
+ 
++A2dpPcmConfig A2dpIntf::get_pcm_config_for_peer(RawAddress addr) const {
++  std::promise<A2dpPcmConfig> result;
++  auto future = result.get_future();
++  if (do_in_main_thread(base::BindOnce(
++      [](RawAddress address, std::promise<A2dpPcmConfig> result) {
++        if (btif_av_source_active_peer() != address || !btif_av_stream_started_ready(A2dpType::kSource)) {
++          result.set_value({});
++          return;
++        }
++        const auto pcm = bluetooth::audio::a2dp::GetPcmConfig();
++        result.set_value(A2dpPcmConfig{pcm.ready, pcm.sample_rate, pcm.bits_per_sample,
++            pcm.channels_count, pcm.generation, "/var/run/bluetooth/audio/.a2dp_data"});
++      }, addr, std::move(result))) != BT_STATUS_SUCCESS) return {};
++  if (future.wait_for(std::chrono::milliseconds(250)) != std::future_status::ready) return {};
++  return future.get();
++}
++
++RustSessionPosition A2dpIntf::get_position_for_peer(RawAddress addr) const {
++  std::promise<RustSessionPosition> result;
++  auto future = result.get_future();
++  if (do_in_main_thread(base::BindOnce(
++      [](RawAddress address, std::promise<RustSessionPosition> result) {
++        if (btif_av_source_active_peer() != address || !btif_av_stream_started_ready(A2dpType::kSource)) {
++          result.set_value({});
++          return;
++        }
++        const auto p = bluetooth::audio::a2dp::GetPresentationPosition();
++        result.set_value(RustSessionPosition{true, RustPresentationPosition{
++            p.remote_delay_report_ns, p.total_bytes_read, p.data_position.tv_sec,
++            static_cast<int32_t>(p.data_position.tv_nsec)}});
++      }, addr, std::move(result))) != BT_STATUS_SUCCESS) return {};
++  if (future.wait_for(std::chrono::milliseconds(250)) != std::future_status::ready) return {};
++  return future.get();
++}
++
+ // AVRCP
+ 
+ static bluetooth::avrcp::AvrcpMediaInterfaceImpl mAvrcpInterface;
+diff --git a/system/gd/rust/topshim/btav/btav_shim.h b/system/gd/rust/topshim/btav/btav_shim.h
+index f32fb241c3..45d7326305 100644
+--- a/system/gd/rust/topshim/btav/btav_shim.h
++++ b/system/gd/rust/topshim/btav/btav_shim.h
+@@ -29,7 +29,9 @@ namespace topshim {
+ namespace rust {
+ 
+ struct A2dpCodecConfig;
++struct A2dpPcmConfig;
+ struct RustPresentationPosition;
++struct RustSessionPosition;
+ struct RustPlayStatus;
+ 
+ class A2dpIntf {
+@@ -49,9 +51,13 @@ public:
+   // interface for Audio server
+   bool set_audio_config(A2dpCodecConfig rconfig) const;
+   bool start_audio_request() const;
++  bool start_audio_for_peer(RawAddress addr) const;
++  bool stop_audio_for_peer(RawAddress addr) const;
+   bool stop_audio_request() const;
+   bool suspend_audio_request() const;
++  A2dpPcmConfig get_pcm_config_for_peer(RawAddress addr) const;
+   RustPresentationPosition get_presentation_position() const;
++  RustSessionPosition get_position_for_peer(RawAddress addr) const;
+ };
+ 
+ std::unique_ptr<A2dpIntf> GetA2dpProfile(const unsigned char* btif);
+diff --git a/system/gd/rust/topshim/build.rs b/system/gd/rust/topshim/build.rs
+index 5a050ef09a..d7135b5f1e 100644
+--- a/system/gd/rust/topshim/build.rs
++++ b/system/gd/rust/topshim/build.rs
+@@ -48,6 +48,10 @@ fn main() {
+     // to bindgen, and lets you build up options for
+     // the resulting bindings.
+     let bindings = bindgen::Builder::default()
++        // Preserve the array representation used by the hand-written UUID
++        // wrappers. Newer bindgen targets wrap opaque std::array in a helper
++        // type that does not expose slice/indexing operations or Eq.
++        .rust_target(bindgen::RustTarget::stable(47, 0).unwrap_or_else(|err| panic!("{}", err)))
+         .clang_args(bt_searches)
+         .clang_args(libchrome_paths)
+         .clang_args(clang_args)
+diff --git a/system/gd/rust/topshim/hfp/hfp_shim.cc b/system/gd/rust/topshim/hfp/hfp_shim.cc
+index 02909b391d..7658599783 100644
+--- a/system/gd/rust/topshim/hfp/hfp_shim.cc
++++ b/system/gd/rust/topshim/hfp/hfp_shim.cc
+@@ -23,6 +23,7 @@
+ #include "device/include/interop.h"
+ #include "include/hardware/bt_hf.h"
+ #include "src/profiles/hfp.rs.h"
++#include "stack/btm/btm_sco.h"
+ #include "types/raw_address.h"
+ 
+ namespace rusty = ::bluetooth::topshim::rust;
+@@ -291,6 +292,21 @@ int HfpIntf::connect_audio(RawAddress addr, bool sco_offload, int disabled_codec
+   return intf_->ConnectAudio(&addr, disabled_codecs);
+ }
+ 
++HfpPcmConfig HfpIntf::get_pcm_config(RawAddress addr) const {
++  HfpPcmConfig result{};
++#if TARGET_FLOSS
++  const auto config = bluetooth::audio::sco::get_pcm_config(addr);
++  result.ready = config.ready;
++  result.sample_rate = config.sample_rate;
++  result.bits_per_sample = config.ready ? 16 : 0;
++  result.channels_count = config.ready ? 1 : 0;
++  result.codec = config.codec;
++  result.generation = config.generation;
++  result.socket_path = config.ready ? "/var/run/bluetooth/audio/.sco_data" : "";
++#endif
++  return result;
++}
++
+ int HfpIntf::set_active_device(RawAddress addr) { return intf_->SetActiveDevice(&addr); }
+ 
+ int HfpIntf::set_volume(int8_t volume, RawAddress addr) {
+diff --git a/system/gd/rust/topshim/hfp/hfp_shim.h b/system/gd/rust/topshim/hfp/hfp_shim.h
+index 5503676634..8cd37014a9 100644
+--- a/system/gd/rust/topshim/hfp/hfp_shim.h
++++ b/system/gd/rust/topshim/hfp/hfp_shim.h
+@@ -30,6 +30,7 @@ namespace rust {
+ struct TelephonyDeviceStatus;
+ struct CallInfo;
+ struct PhoneState;
++struct HfpPcmConfig;
+ 
+ class HfpIntf {
+ public:
+@@ -38,6 +39,7 @@ public:
+   int init();
+   uint32_t connect(RawAddress addr);
+   int connect_audio(RawAddress addr, bool sco_offload, int disabled_codecs);
++  HfpPcmConfig get_pcm_config(RawAddress addr) const;
+   int set_active_device(RawAddress addr);
+   int set_volume(int8_t volume, RawAddress addr);
+   uint32_t set_mic_volume(int8_t volume, RawAddress addr);
+diff --git a/system/gd/rust/topshim/macros/Cargo.toml b/system/gd/rust/topshim/macros/Cargo.toml
+index 4278e14903..7680e9597f 100644
+--- a/system/gd/rust/topshim/macros/Cargo.toml
++++ b/system/gd/rust/topshim/macros/Cargo.toml
+@@ -7,6 +7,6 @@ edition = "2018"
+ proc-macro = true
+ 
+ [dependencies]
+-syn = "1.0"
++syn = { version = "1.0", features = ["full", "extra-traits"] }
+ quote = "1.0"
+ proc-macro2 = "1.0"
+diff --git a/system/gd/rust/topshim/src/profiles/a2dp.rs b/system/gd/rust/topshim/src/profiles/a2dp.rs
+index 41a6d7cbae..8a277dd484 100644
+--- a/system/gd/rust/topshim/src/profiles/a2dp.rs
++++ b/system/gd/rust/topshim/src/profiles/a2dp.rs
+@@ -191,6 +191,21 @@ impl TryFrom<i32> for A2dpCodecChannelMode {
+ 
+ #[cxx::bridge(namespace = bluetooth::topshim::rust)]
+ pub mod ffi {
++    #[derive(Debug, Default)]
++    pub struct A2dpPcmConfig {
++        ready: bool,
++        sample_rate: u32,
++        bits_per_sample: u8,
++        channels_count: u8,
++        generation: u64,
++        socket_path: String,
++    }
++    #[derive(Debug, Default)]
++    pub struct RustSessionPosition {
++        valid: bool,
++        position: RustPresentationPosition,
++    }
++
+     unsafe extern "C++" {
+         include!("types/raw_address.h");
+         #[namespace = ""]
+@@ -246,10 +261,14 @@ pub mod ffi {
+         ) -> i32;
+         fn set_audio_config(self: &A2dpIntf, config: A2dpCodecConfig) -> bool;
+         fn start_audio_request(self: &A2dpIntf) -> bool;
++        fn start_audio_for_peer(self: &A2dpIntf, addr: RawAddress) -> bool;
++        fn stop_audio_for_peer(self: &A2dpIntf, addr: RawAddress) -> bool;
+         fn stop_audio_request(self: &A2dpIntf) -> bool;
+         fn suspend_audio_request(self: &A2dpIntf) -> bool;
+         fn cleanup(self: &A2dpIntf);
+         fn get_presentation_position(self: &A2dpIntf) -> RustPresentationPosition;
++        fn get_pcm_config_for_peer(self: &A2dpIntf, addr: RawAddress) -> A2dpPcmConfig;
++        fn get_position_for_peer(self: &A2dpIntf, addr: RawAddress) -> RustSessionPosition;
+         // A2dp sink functions
+ 
+         unsafe fn GetA2dpSinkProfile(btif: *const u8) -> UniquePtr<A2dpSinkIntf>;
+@@ -431,6 +450,13 @@ impl A2dp {
+ 
+     #[log_args]
+     #[profile_enabled_or(false)]
++    pub fn start_audio_for_peer(&self, addr: RawAddress) -> bool {
++        self.internal.start_audio_for_peer(addr)
++    }
++    pub fn stop_audio_for_peer(&self, addr: RawAddress) -> bool {
++        self.internal.stop_audio_for_peer(addr)
++    }
++
+     pub fn start_audio_request(&self) -> bool {
+         self.internal.start_audio_request()
+     }
+@@ -449,6 +475,14 @@ impl A2dp {
+ 
+     #[log_args]
+     #[profile_enabled_or_default]
++    pub fn get_pcm_config_for_peer(&self, addr: RawAddress) -> ffi::A2dpPcmConfig {
++        self.internal.get_pcm_config_for_peer(addr)
++    }
++
++    pub fn get_position_for_peer(&self, addr: RawAddress) -> ffi::RustSessionPosition {
++        self.internal.get_position_for_peer(addr)
++    }
++
+     pub fn get_presentation_position(&self) -> PresentationPosition {
+         self.internal.get_presentation_position()
+     }
+diff --git a/system/gd/rust/topshim/src/profiles/hfp.rs b/system/gd/rust/topshim/src/profiles/hfp.rs
+index ae3f1b0b95..910f6f4e6e 100644
+--- a/system/gd/rust/topshim/src/profiles/hfp.rs
++++ b/system/gd/rust/topshim/src/profiles/hfp.rs
+@@ -137,6 +137,18 @@ impl TryFrom<i32> for HfpCodecFormat {
+ 
+ #[cxx::bridge(namespace = bluetooth::topshim::rust)]
+ pub mod ffi {
++    #[derive(Debug, Clone)]
++    pub struct HfpPcmConfig {
++        ready: bool,
++        active: bool,
++        sample_rate: u32,
++        bits_per_sample: u8,
++        channels_count: u8,
++        codec: u32,
++        socket_path: String,
++        generation: u64,
++    }
++
+     unsafe extern "C++" {
+         include!("types/raw_address.h");
+         #[namespace = ""]
+@@ -203,6 +215,7 @@ pub mod ffi {
+             disabled_codecs: i32,
+         ) -> i32;
+         fn set_active_device(self: Pin<&mut HfpIntf>, bt_addr: RawAddress) -> i32;
++        fn get_pcm_config(self: &HfpIntf, bt_addr: RawAddress) -> HfpPcmConfig;
+         fn set_volume(self: Pin<&mut HfpIntf>, volume: i8, bt_addr: RawAddress) -> i32;
+         fn set_mic_volume(self: Pin<&mut HfpIntf>, volume: i8, bt_addr: RawAddress) -> u32;
+         fn disconnect(self: Pin<&mut HfpIntf>, bt_addr: RawAddress) -> u32;
+@@ -441,6 +454,11 @@ impl ToggleableProfile for Hfp {
+ }
+ 
+ impl Hfp {
++    /// Returns the current, address-matched software SCO transport format.
++    pub fn get_pcm_config(&self, addr: RawAddress) -> ffi::HfpPcmConfig {
++        self.internal.get_pcm_config(addr)
++    }
++
+     #[log_args]
+     pub fn new(intf: &BluetoothInterface) -> Hfp {
+         let hfpif: cxx::UniquePtr<ffi::HfpIntf>;
+diff --git a/system/stack/BUILD.gn b/system/stack/BUILD.gn
+index d078d1bc14..6226d0a9e5 100644
+--- a/system/stack/BUILD.gn
++++ b/system/stack/BUILD.gn
+@@ -218,6 +218,9 @@ source_set("stack") {
+   ]
+ 
+   deps = [
++    # Stack sources include generated flags directly. Do not depend on the
++    # optional, separately built MMC service to propagate this include path.
++    "//bt/flags:bluetooth_flags_c_lib",
+     "//bt/sysprop:libcom.android.sysprop.bluetooth",
+     "//bt/system/gd/crypto_toolbox:crypto_toolbox",
+     "//bt/system/gd/rust/topshim:cxxlibheader",
+diff --git a/system/stack/a2dp/a2dp_aac_encoder_linux.cc b/system/stack/a2dp/a2dp_aac_encoder_linux.cc
+index 0388840cd6..ad4f38adee 100644
+--- a/system/stack/a2dp/a2dp_aac_encoder_linux.cc
++++ b/system/stack/a2dp/a2dp_aac_encoder_linux.cc
+@@ -16,6 +16,10 @@
+ 
+ #define LOG_TAG "bluetooth-a2dp"
+ 
++#if defined(TARGET_FLOSS)
++#include "audio_hal_interface/a2dp_encoding_host.h"
++#endif
++
+ #include <bluetooth/log.h>
+ #include <inttypes.h>
+ #include <string.h>
+@@ -144,6 +148,9 @@ FFmpegInterface codec_intf;
+ bool A2DP_LoadEncoderAac() { return true; }
+ 
+ void A2DP_UnloadEncoderAac(void) {
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
+   codec_intf.clear_context();
+   a2dp_aac_encoder_cb = tA2DP_AAC_ENCODER_CB{};
+ }
+@@ -152,6 +159,9 @@ void a2dp_aac_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
+                            A2dpCodecConfig* a2dp_codec_config,
+                            a2dp_source_read_callback_t read_callback,
+                            a2dp_source_enqueue_callback_t enqueue_callback) {
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
+   uint8_t codec_info[AVDT_CODEC_SIZE];
+   if (!a2dp_codec_config->copyOutOtaCodecConfig(codec_info)) {
+     log::error("Cannot update the codec encoder for {}: invalid codec config",
+@@ -177,6 +187,9 @@ void a2dp_aac_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
+     return;  // TODO(b/294165759): need to return an error
+   }
+ 
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(sample_rate, bits_per_sample, channel_count);
++#endif
+   uint32_t encoder_interval_ms = pcm_samples_per_frame * 1000 / sample_rate;
+ 
+   a2dp_aac_encoder_cb = tA2DP_AAC_ENCODER_CB{
+@@ -207,6 +220,9 @@ void a2dp_aac_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
+ }
+ 
+ void a2dp_aac_encoder_cleanup() {
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
+   codec_intf.clear_context();
+   a2dp_aac_encoder_cb = tA2DP_AAC_ENCODER_CB{};
+ }
+diff --git a/system/stack/a2dp/a2dp_sbc_encoder.cc b/system/stack/a2dp/a2dp_sbc_encoder.cc
+index fb455e219b..5bdf041b2a 100644
+--- a/system/stack/a2dp/a2dp_sbc_encoder.cc
++++ b/system/stack/a2dp/a2dp_sbc_encoder.cc
+@@ -19,6 +19,10 @@
+ 
+ #define LOG_TAG "bluetooth-a2dp"
+ 
++#if defined(TARGET_FLOSS)
++#include "audio_hal_interface/a2dp_encoding_host.h"
++#endif
++
+ #include "a2dp_sbc_encoder.h"
+ 
+ #include <bluetooth/log.h>
+@@ -147,6 +151,9 @@ void a2dp_sbc_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
+ // |a2dp_codec_config| is the A2DP codec to use for the update.
+ static void a2dp_sbc_encoder_update(A2dpCodecConfig* a2dp_codec_config, bool* p_restart_input,
+                                     bool* p_restart_output, bool* p_config_updated) {
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
+   SBC_ENC_PARAMS* p_encoder_params = &a2dp_sbc_encoder_cb.sbc_encoder_params;
+   uint8_t codec_info[AVDT_CODEC_SIZE];
+   uint16_t s16SamplingFreq;
+@@ -311,9 +318,16 @@ static void a2dp_sbc_encoder_update(A2dpCodecConfig* a2dp_codec_config, bool* p_
+   /* Reset the SBC encoder */
+   SBC_Encoder_Init(&a2dp_sbc_encoder_cb.sbc_encoder_params);
+   a2dp_sbc_encoder_cb.tx_sbc_frames = calculate_max_frames_per_packet();
++#if defined(TARGET_FLOSS)
++  const auto& pcm = a2dp_sbc_encoder_cb.feeding_params;
++  bluetooth::audio::a2dp::UpdatePcmConfig(pcm.sample_rate, pcm.bits_per_sample, pcm.channel_count);
++#endif
+ }
+ 
+ void a2dp_sbc_encoder_cleanup(void) {
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
+   memset(&a2dp_sbc_encoder_cb, 0, sizeof(a2dp_sbc_encoder_cb));
+ }
+ 
+diff --git a/system/stack/btm/btm_sco.cc b/system/stack/btm/btm_sco.cc
+index c48b321448..0dc59129a2 100644
+--- a/system/stack/btm/btm_sco.cc
++++ b/system/stack/btm/btm_sco.cc
+@@ -1048,7 +1048,18 @@ void btm_sco_connected(const RawAddress& bda, uint16_t hci_handle, tBTM_ESCO_DAT
+         }
+ 
+         std::fill(std::begin(btm_pcm_buf), std::end(btm_pcm_buf), 0);
++#if TARGET_FLOSS
++        const uint32_t pcm_codec = codec_type == BTM_SCO_CODEC_CVSD ? 1 :
++                                   codec_type == BTM_SCO_CODEC_MSBC ? 2 :
++                                   codec_type == BTM_SCO_CODEC_LC3 ? 4 : 0;
++        if (!bluetooth::audio::sco::open_for_codec(bda, pcm_codec)) {
++          // Connection callback has already run. Tear down this exact link now,
++          // even when no receive packet will ever arrive to drive recovery.
++          get_btm_client_interface().sco.BTM_RemoveSco(xx);
++        }
++#else
+         bluetooth::audio::sco::open();
++#endif
+       }
+       return;
+     }
+@@ -1793,3 +1804,18 @@ bool btm_peer_supports_esco_ev3(RawAddress remote_bda) {
+   }
+   return HCI_ESCO_EV3_SUPPORTED(features);
+ }
++
++#if TARGET_FLOSS
++void bluetooth::audio::sco::disconnect_failed_transport(const RawAddress& address,
++                                                       uint64_t generation) {
++  const auto snapshot = get_pcm_config(address);
++  if (snapshot.generation != generation || snapshot.ready) return;
++  for (uint16_t i = 0; i < BTM_MAX_SCO_LINKS; ++i) {
++    const auto& link = btm_cb.sco_cb.sco_db[i];
++    if (link.state == SCO_ST_CONNECTED && link.esco.data.bd_addr == address && link.is_inband()) {
++      get_btm_client_interface().sco.BTM_RemoveSco(i);
++      return;
++    }
++  }
++}
++#endif
+diff --git a/system/stack/btm/btm_sco.h b/system/stack/btm/btm_sco.h
+index ab55e78e44..56cd0c7962 100644
+--- a/system/stack/btm/btm_sco.h
++++ b/system/stack/btm/btm_sco.h
+@@ -43,6 +43,20 @@ void init();
+ /* Open the socket when there is SCO connection open */
+ void open();
+ 
++#if TARGET_FLOSS
++// Snapshot of the live software SCO socket, never inferred from remote caps.
++struct PcmConfig {
++  bool ready = false;
++  uint32_t sample_rate = 0;
++  uint32_t codec = 0;  // HFP bit IDs: CVSD=1, mSBC=2, LC3=4.
++  uint64_t generation = 0;
++};
++bool open_for_codec(const RawAddress& address, uint32_t codec);
++PcmConfig get_pcm_config(const RawAddress& address);
++// Runs on the owning stack thread; rejects stale transport generations.
++void disconnect_failed_transport(const RawAddress& address, uint64_t generation);
++#endif
++
+ /* Clean up the socket when the SCO connection is done */
+ void cleanup();
+ 
+diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
+index aef34f6a46..6e37b85bd2 100644
+--- a/system/stack/btm/btm_sco_hci.cc
++++ b/system/stack/btm/btm_sco_hci.cc
+@@ -20,16 +20,20 @@
+ #include <grp.h>
+ #include <math.h>
+ #include <sys/stat.h>
++#include <sys/socket.h>
+ #include <unistd.h>
+ 
+ #include <cfloat>
++#include <cerrno>
+ #include <memory>
++#include <mutex>
+ 
+ #include "bta/ag/bta_ag_int.h"
+ #include "btif/include/core_callbacks.h"
+ #include "btif/include/stack_manager_t.h"
+ #include "osi/include/allocator.h"
+ #include "stack/btm/btm_sco.h"
++#include "stack/include/main_thread.h"
+ #include "udrv/include/uipc.h"
+ 
+ /* Per Bluetooth Core v5.0 and HFP 1.9 specification. */
+@@ -70,6 +74,26 @@
+ namespace {
+ 
+ std::unique_ptr<tUIPC_STATE> sco_uipc = nullptr;
++std::mutex sco_pcm_mutex;
++bluetooth::audio::sco::PcmConfig sco_pcm_config;
++RawAddress sco_pcm_address = RawAddress::kEmpty;
++bool sco_socket_open = false;
++// UIPC callbacks may run on its worker. Publish invalidation under the snapshot
++// lock, then marshal teardown onto the stack thread. Never acquire UIPC while
++// holding this mutex: cleanup joins its worker.
++void fail_transport() {
++  RawAddress address;
++  uint64_t generation;
++  {
++    std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++    if (sco_pcm_address.IsEmpty() || !sco_pcm_config.ready) return;
++    address = sco_pcm_address;
++    sco_pcm_config.ready = false;
++    generation = ++sco_pcm_config.generation;
++  }
++  do_in_main_thread(base::BindOnce(
++      &bluetooth::audio::sco::disconnect_failed_transport, address, generation));
++}
+ 
+ void sco_data_cb(tUIPC_CH_ID, tUIPC_EVENT event) {
+   switch (event) {
+@@ -82,6 +106,9 @@ void sco_data_cb(tUIPC_CH_ID, tUIPC_EVENT event) {
+       UIPC_Ioctl(*sco_uipc, UIPC_CH_ID_AV_AUDIO, UIPC_SET_READ_POLL_TMO,
+                  reinterpret_cast<void*>(SCO_DATA_READ_POLL_MS));
+       break;
++    case UIPC_CLOSE_EVT:
++      fail_transport();
++      break;
+     default:
+       break;
+   }
+@@ -107,7 +134,12 @@ void open() {
+     return;
+   }
+ 
+-  UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb, SCO_HOST_DATA_PATH);
++  sco_socket_open = UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb,
++                              SCO_HOST_DATA_PATH);
++  if (!sco_socket_open) {
++    log::error("failed to open SCO PCM socket");
++    return;
++  }
+   struct group* grp = getgrnam(SCO_HOST_DATA_GROUP);
+   chmod(SCO_HOST_DATA_PATH, 0770);
+   if (grp) {
+@@ -118,7 +150,47 @@ void open() {
+   }
+ }
+ 
++bool open_for_codec(const RawAddress& address, uint32_t codec) {
++  // Closing the previous socket prevents reusing a connection after a codec
++  // change. Only advertise a PCM format once the new listener actually exists.
++  open();
++  // Exclude the UIPC worker's close callback while publishing readiness.
++  // Never hold the snapshot lock across open()/cleanup(), which joins it.
++  std::unique_lock<std::recursive_mutex> channel_lock;
++  if (sco_uipc) channel_lock = std::unique_lock<std::recursive_mutex>(sco_uipc->mutex);
++  std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++  ++sco_pcm_config.generation;
++  sco_pcm_address = address;
++  sco_pcm_config.codec = codec;
++  switch (codec) {
++    case 1: sco_pcm_config.sample_rate = 8000; break;
++    case 2: sco_pcm_config.sample_rate = 16000; break;
++    case 4: sco_pcm_config.sample_rate = 32000; break;
++    default: sco_pcm_config.sample_rate = 0; break;
++  }
++  sco_pcm_config.ready = sco_socket_open && sco_uipc &&
++      sco_uipc->ch[UIPC_CH_ID_AV_AUDIO].srvfd >= 0 && sco_pcm_config.sample_rate != 0;
++  return sco_pcm_config.ready;
++}
++
++PcmConfig get_pcm_config(const RawAddress& address) {
++  std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++  if (address != sco_pcm_address || !sco_pcm_config.ready) {
++    return {.generation = sco_pcm_config.generation};
++  }
++  return sco_pcm_config;
++}
++
+ void cleanup() {
++  {
++    std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++    ++sco_pcm_config.generation;
++    sco_pcm_config.ready = false;
++    sco_pcm_config.sample_rate = 0;
++    sco_pcm_config.codec = 0;
++    sco_pcm_address = RawAddress::kEmpty;
++  }
++  sco_socket_open = false;
+   if (sco_uipc == nullptr) {
+     return;
+   }
+@@ -139,7 +211,34 @@ size_t write(const uint8_t* p_buf, uint32_t len) {
+     log::warn("Write to uninitialized or closed UIPC");
+     return 0;
+   }
+-  return UIPC_Send(*sco_uipc, UIPC_CH_ID_AV_AUDIO, 0, p_buf, len) ? len : 0;
++  {
++    std::lock_guard<std::mutex> pcm_lock(sco_pcm_mutex);
++    if (!sco_pcm_config.ready) {
++      return 0;
++    }
++  }
++  // SCO receive handling also clocks SCO transmit. Never let an audio client
++  // that stopped draining its microphone block the Bluetooth stack thread.
++  // UIPC_Send is a blocking legacy API and does not detect short writes.
++  std::lock_guard<std::recursive_mutex> lock(sco_uipc->mutex);
++  const int fd = sco_uipc->ch[UIPC_CH_ID_AV_AUDIO].fd;
++  if (fd < 0) {
++    return 0;  // The audio server has not connected to the listener yet.
++  }
++  ssize_t sent;
++  do {
++    sent = send(fd, p_buf, len, MSG_DONTWAIT | MSG_NOSIGNAL);
++  } while (sent < 0 && errno == EINTR);
++  if (sent == static_cast<ssize_t>(len)) {
++    return len;
++  }
++  // A short write may end in the middle of an S16 sample. End this transport
++  // incarnation instead of following it with a new frame and corrupting PCM.
++  // The peer sees EOF and must stop/restart SCO; no partial frame is retried.
++  shutdown(fd, SHUT_RDWR);
++  fail_transport();
++  log::warn("SCO PCM client stopped draining audio; closed transport");
++  return 0;
+ }
+ #else
+ void open() {}
+diff --git a/system/stack/btm/btm_sco_hfp_hal_linux.cc b/system/stack/btm/btm_sco_hfp_hal_linux.cc
+index 9ca83962ee..e2d6ae9f9c 100644
+--- a/system/stack/btm/btm_sco_hfp_hal_linux.cc
++++ b/system/stack/btm/btm_sco_hfp_hal_linux.cc
+@@ -20,6 +20,8 @@
+ #include <unistd.h>
+ 
+ #include <vector>
++#include <cstdlib>
++#include <cstring>
+ 
+ #include "hci/controller_interface.h"
+ #include "main/shim/entry.h"
+@@ -36,6 +38,7 @@ namespace hfp_hal_interface {
+ namespace {
+ bool offload_supported = false;
+ bool offload_enabled = false;
++bool software_hci_transport = false;
+ 
+ typedef struct cached_codec_info {
+   struct bt_codec inner;
+@@ -279,6 +282,36 @@ int mgmt_notify_sco_connection_change(int fd, int hci, RawAddress device, bool i
+ }  // namespace
+ 
+ void init() {
++  cached_codecs.clear();
++  offload_supported = false;
++  offload_enabled = false;
++#ifdef TARGET_FLOSS
++  // Explicit transport opt-in. This avoids the ChromeOS-specific management
++  // commands, but does not teach a stock USB driver to configure isochronous
++  // endpoints while the controller is owned through HCI_CHANNEL_USER.
++  software_hci_transport =
++          osi_property_get_bool("bluetooth.hfp.software_hci_transport.enabled", false);
++  // Linux/ChromeOS properties are process-local. Let the service deployment
++  // opt in explicitly without adding an unrestricted property-setting API.
++  if (const char* value = std::getenv("FLOSS_HFP_SOFTWARE_HCI_TRANSPORT")) {
++    software_hci_transport = std::strcmp(value, "true") == 0;
++  }
++  if (software_hci_transport) {
++    auto controller = bluetooth::shim::GetController();
++    if (controller != nullptr && controller->SupportsSco()) {
++      cached_codecs.push_back({.inner = {.codec = codec::CVSD}});
++    }
++    // HFP mSBC T1 requires EV3 packets; the existing software codec handles
++    // framing. The explicit property asserts that the host transport carries
++    // these SCO packets; the feature bit alone cannot establish that.
++    if (controller != nullptr && controller->SupportsEv3Packets()) {
++      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = 60});
++    }
++    bluetooth::log::warn("Using explicitly enabled software HCI SCO transport; "
++                         "kernel USB transport support must be verified separately");
++    return;
++  }
++#endif
+   int hci = GetAdapterIndex();
+   int fd = btsocket_open_mgmt(hci);
+   if (fd < 0) {
+@@ -331,6 +364,10 @@ bool get_wbs_supported() {
+ // Check if super-wideband speech is supported on local device
+ bool get_swb_supported() {
+ #ifdef TARGET_FLOSS
++  // Initial standard-HCI mode is deliberately limited to CVSD and mSBC.
++  if (software_hci_transport) {
++    return false;
++  }
+   // We only support SWB via transparent mode.
+   return is_coding_format_supported(ESCO_CODING_FORMAT_TRANSPNT);
+ #else
+@@ -455,6 +492,9 @@ size_t get_packet_size(int codec) {
+ }
+ 
+ void notify_sco_connection_change(RawAddress device, bool is_connected, int codec) {
++  if (software_hci_transport) {
++    return;
++  }
+   int hci = GetAdapterIndex();
+   int fd = btsocket_open_mgmt(hci);
+   if (fd < 0) {
+diff --git a/system/stack/mmc/BUILD.gn b/system/stack/mmc/BUILD.gn
+index dd5d1308c6..fa20be174a 100644
+--- a/system/stack/mmc/BUILD.gn
++++ b/system/stack/mmc/BUILD.gn
+@@ -23,7 +23,6 @@ group("mmc") {
+     ":install_minijail_config",
+     ":install_system_service",
+     ":install_tmpfiles_config",
+-    ":mmc_service",
+     "//bt/system/stack/mmc/codec_client:libcodec_client",
+     "//bt/system/stack/mmc/proto:mmc_config_proto",
+   ]
+@@ -45,6 +44,7 @@ pkg_config("target_defaults") {
+     "//bt/system/stack/include",
+   ]
+   pkg_deps = [
++    "dbus-1",
+     "libchrome",
+   ]
+   if (use.fuzzer) {
+diff --git a/system/stack/mmc/codec_client/BUILD.gn b/system/stack/mmc/codec_client/BUILD.gn
+index ae022591d0..6f30620625 100644
+--- a/system/stack/mmc/codec_client/BUILD.gn
++++ b/system/stack/mmc/codec_client/BUILD.gn
+@@ -14,7 +14,14 @@
+ #  limitations under the License.
+ #
+ 
++pkg_config("dbus_headers") {
++  pkg_deps = [ "dbus-1" ]
++}
++
+ source_set("libcodec_client"){
++  # Public codec_client.h includes libchrome's D-Bus wrappers. Propagate the
++  # D-Bus include paths to users of this source set through intervening groups.
++  all_dependent_configs = [ ":dbus_headers" ]
+   configs += [
+     "//bt/system/stack/mmc:target_defaults",
+     "//bt/system/log:log_defaults",
+diff --git a/system/stack/mmc/codec_client/codec_client.cc b/system/stack/mmc/codec_client/codec_client.cc
+index 24b39e2455..a57a6dfa64 100644
+--- a/system/stack/mmc/codec_client/codec_client.cc
++++ b/system/stack/mmc/codec_client/codec_client.cc
+@@ -94,6 +94,7 @@ CodecClient::~CodecClient() {
+ 
+ int CodecClient::init(const ConfigParam config) {
+   cleanup();
++  if (!codec_manager_) return -ENOTCONN;
+ 
+   // Set up record logger.
+   record_logger_ = std::make_unique<MmcRttLogger>(CodecId(config));
+@@ -169,9 +170,11 @@ void CodecClient::cleanup() {
+   // Upload Rtt statics when the session ends.
+   if (record_logger_.get() != nullptr) {
+     record_logger_->UploadTranscodeRttStatics();
+-    record_logger_.release();
++    record_logger_.reset();
+   }
+ 
++  if (!codec_manager_) return;
++
+   dbus::MethodCall method_call(mmc::kMmcServiceInterface, mmc::kCodecCleanUpMethod);
+ 
+   std::unique_ptr<dbus::Response> dbus_response =
+@@ -221,7 +224,8 @@ int CodecClient::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len)
+   pfd.fd = skt_fd_;
+   pfd.events = POLLIN;
+ 
+-  int pollret = poll(&pfd, 1, -1);
++  int pollret = poll(&pfd, 1, 1000);
++  if (pollret == 0) return -ETIMEDOUT;
+   if (pollret < 0) {
+     log::error("Failed to poll: {}", strerror(errno));
+     return -errno;
+diff --git a/system/udrv/ulinux/uipc.cc b/system/udrv/ulinux/uipc.cc
+index c3444d4b57..cf21baebb8 100644
+--- a/system/udrv/ulinux/uipc.cc
++++ b/system/udrv/ulinux/uipc.cc
+@@ -572,7 +572,7 @@ bool UIPC_Open(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, tUIPC_RCV_CBACK* p_cback,
+ 
+   uipc_setup_server_locked(uipc, ch_id, socket_path, p_cback);
+ 
+-  return true;
++  return uipc.ch[ch_id].srvfd != UIPC_DISCONNECTED;
+ }
+ 
+ /*******************************************************************************

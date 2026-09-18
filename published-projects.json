@@ -1,0 +1,30 @@
+{
+  "bluedevil": {
+    "repository": "gotlougit/floss-bluedevil",
+    "branch": "floss",
+    "upstream": "https://invent.kde.org/plasma/bluedevil.git",
+    "upstreamRev": "c15cdd83448c7a62690f57c1dde723a5532f5eb8",
+    "commit": "f501ab888282025c28b3a44bbc74fd53c89c7f0e"
+  },
+  "pipewire": {
+    "repository": "gotlougit/floss-pipewire",
+    "branch": "floss",
+    "upstream": "https://gitlab.freedesktop.org/pipewire/pipewire.git",
+    "upstreamRev": "744a6b547ddb511e46fb41c1e54d033eca4faec9",
+    "commit": "9ab6df867e1f15067ffdab3160420e8f005d8cb2"
+  },
+  "wireplumber": {
+    "repository": "gotlougit/floss-wireplumber",
+    "branch": "floss",
+    "upstream": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",
+    "upstreamRev": "2649ebb4dc37760ed220cb579f4b409c466804e8",
+    "commit": "b3d7da48f17f5ab6e5f4338cea564c93aaec18aa"
+  },
+  "bluetooth": {
+    "repository": "gotlougit/floss-bluetooth",
+    "branch": "floss",
+    "upstream": "https://android.googlesource.com/platform/packages/modules/Bluetooth",
+    "upstreamRev": "745ee92b87ed62b5a8a1bac47d5df8cad623bf59",
+    "commit": "b7cb548bf1dcbf823b80856a1a94b5d630d36bd6"
+  }
+}

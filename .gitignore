@@ -1,0 +1,10 @@
+Bluetooth/
+pipewire/
+bluez-qt/
+result
+result-*
+nix-config/
+runtime-results/
+publication/
+__pycache__/
+*.pyc

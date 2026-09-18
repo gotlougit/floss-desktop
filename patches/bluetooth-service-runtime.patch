@@ -1,0 +1,1737 @@
+diff --git a/system/gd/rust/linux/client/src/dbus_iface.rs b/system/gd/rust/linux/client/src/dbus_iface.rs
+index 9e0f2818d1..ec630d9a36 100644
+--- a/system/gd/rust/linux/client/src/dbus_iface.rs
++++ b/system/gd/rust/linux/client/src/dbus_iface.rs
+@@ -11,6 +11,7 @@ use bt_topshim::profiles::a2dp::{
+ use bt_topshim::profiles::avrcp::PlayerMetadata;
+ use bt_topshim::profiles::gatt::{AdvertisingStatus, GattStatus, LeDiscMode, LePhy};
+ use bt_topshim::profiles::hfp::{EscoCodingFormat, HfpCodecBitId, HfpCodecFormat};
++use bt_topshim::profiles::hfp::ffi::HfpPcmConfig;
+ use bt_topshim::profiles::hid_host::BthhReportType;
+ use bt_topshim::profiles::le_audio::{
+     BtLeAudioContentType, BtLeAudioDirection, BtLeAudioGroupNodeStatus, BtLeAudioGroupStatus,
+@@ -43,7 +44,7 @@ use btstack::bluetooth_gatt::{
+     ScanFilterPattern, ScanResult, ScanSettings, ScanType,
+ };
+ use btstack::bluetooth_media::{
+-    BluetoothAudioDevice, IBluetoothMedia, IBluetoothMediaCallback, IBluetoothTelephony,
++    A2dpPcmConfig, AudioSessionPosition, BluetoothAudioDevice, IBluetoothMedia, IBluetoothMediaCallback, IBluetoothTelephony,
+     IBluetoothTelephonyCallback,
+ };
+ use btstack::bluetooth_qa::IBluetoothQA;
+@@ -583,6 +584,37 @@ struct PlayerMetadataDBus {
+     length_us: i64,
+ }
+ 
++#[dbus_propmap(AudioSessionPosition)]
++pub struct AudioSessionPositionDBus {
++    valid: bool,
++    total_bytes_read: u64,
++    data_position_sec: i64,
++    data_position_nsec: i64,
++    remote_delay_report_ns: u64,
++}
++
++#[dbus_propmap(A2dpPcmConfig)]
++pub struct A2dpPcmConfigDBus {
++    ready: bool,
++    sample_rate: u32,
++    bits_per_sample: u8,
++    channels_count: u8,
++    generation: u64,
++    socket_path: String,
++}
++
++#[dbus_propmap(HfpPcmConfig)]
++pub struct HfpPcmConfigDBus {
++    ready: bool,
++    active: bool,
++    sample_rate: u32,
++    bits_per_sample: u8,
++    channels_count: u8,
++    codec: u32,
++    socket_path: String,
++    generation: u64,
++}
++
+ #[dbus_propmap(BtLePcmConfig)]
+ pub struct BtLePcmConfigDBus {
+     data_interval_us: u32,
+@@ -2776,6 +2808,28 @@ impl IBluetoothMedia for BluetoothMediaDBus {
+         dbus_generated!()
+     }
+ 
++    #[dbus_method("ReserveAudioSession")]
++    fn reserve_audio_session(&mut self, address: RawAddress, hfp: bool,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> u64 { dbus_generated!() }
++
++    #[dbus_method("StartAudioSession")]
++    fn start_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>,
++        listener: File) -> bool { dbus_generated!() }
++
++    #[dbus_method("StopAudioSession")]
++    fn stop_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>) -> bool { dbus_generated!() }
++
++    #[dbus_method("GetConnectedAudioDevices")]
++    fn get_connected_audio_devices(&self) -> Vec<BluetoothAudioDevice> { dbus_generated!() }
++
++    #[dbus_method("GetA2dpPcmConfig", DBusLog::Disable)]
++    fn get_a2dp_pcm_config(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> A2dpPcmConfig { dbus_generated!() }
++
++    #[dbus_method("GetAudioSessionPosition", DBusLog::Disable)]
++    fn get_audio_session_position(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> AudioSessionPosition { dbus_generated!() }
++
+     #[dbus_method("StartAudioRequest")]
+     fn start_audio_request(&mut self, connection_listener: File) -> bool {
+         dbus_generated!()
+@@ -2807,6 +2861,11 @@ impl IBluetoothMedia for BluetoothMediaDBus {
+         dbus_generated!()
+     }
+ 
++    #[dbus_method("GetHfpPcmConfig")]
++    fn get_hfp_pcm_config(&self, address: RawAddress) -> HfpPcmConfig {
++        dbus_generated!()
++    }
++
+     #[dbus_method("StopScoCall")]
+     fn stop_sco_call(&mut self, address: RawAddress, connection_listener: File) {
+         dbus_generated!()
+diff --git a/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs b/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs
+index 3cc3c91cf2..95ae4c5b5c 100644
+--- a/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs
++++ b/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs
+@@ -47,6 +47,9 @@ fn debug_output_to_file(gen: &proc_macro2::TokenStream, filename: String) {
+ /// `dbus_logging`: enum DBusLog, optional. Whether to enable logging and the log verbosity.
+ ///                 Note that log is disabled by default for outgoing dbus messages, but enabled
+ ///                 by default with verbose level for incoming messages.
++/// `authorization`: optional `guard(argument)` function. The exporter calls
++///                 `guard(&target, context, &raw_dbus_argument)?` while holding the same
++///                 target mutex as the method invocation, before any mutation.
+ #[proc_macro_attribute]
+ pub fn dbus_method(_attr: TokenStream, item: TokenStream) -> TokenStream {
+     let ori_item: proc_macro2::TokenStream = item.clone().into();
+@@ -155,6 +158,33 @@ pub fn generate_dbus_exporter(attr: TokenStream, item: TokenStream) -> TokenStre
+                 syn::parse2::<NestedMeta>(token).unwrap()
+             };
+ 
++            // Opt-in authorization is performed under the invocation lock.
++            // Existing exports without a third attribute argument are unchanged.
++            let authorization = if meta_list.nested.len() > 2 {
++                match &meta_list.nested[2] {
++                    NestedMeta::Meta(Meta::List(guard)) if guard.nested.len() == 1 => {
++                        let function = &guard.path;
++                        let argument = match &guard.nested[0] {
++                            NestedMeta::Meta(Meta::Path(path)) => path,
++                            _ => panic!("authorization requires an argument identifier"),
++                        };
++                        let input = format_ident!("{}_", argument.get_ident().expect("authorization requires one argument identifier"));
++                        quote! { #function(&*target, ctx, &#input)?; }
++                    }
++                    _ => panic!("authorization must be guard(argument)"),
++                }
++            } else {
++                quote! {}
++            };
++
++            let sender_check = if meta_list.nested.len() > 2 {
++                quote! {
++                    if ctx.message().sender().is_none() {
++                        return Err(("org.freedesktop.DBus.Error.AccessDenied", "Missing authenticated sender").into());
++                    }
++                }
++            } else { quote! {} };
++
+             let method_name = method.sig.ident;
+ 
+             let mut arg_names = quote! {};
+@@ -241,16 +271,25 @@ pub fn generate_dbus_exporter(attr: TokenStream, item: TokenStream) -> TokenStre
+                 DBusLog::log(#dbus_logging, "dbus in", #dbus_iface_name, #dbus_method_name, args_formatted.as_str());
+             };
+ 
+-            let method_call = match mixin_name {
+-                Some(name) => {
+-                    quote! {
+-                        let ret = obj.#name.lock().unwrap().#method_name(#method_args);
+-                    }
++            let lock_target = match mixin_name {
++                Some(name) => quote! { obj.#name.lock().unwrap() },
++                None => quote! { obj.lock().unwrap() },
++            };
++            let method_call = if meta_list.nested.len() > 2 {
++                quote! {
++                    let mut target = #lock_target;
++                    #authorization
++                    #make_args
++                    #debug
++                    let ret = target.#method_name(#method_args);
++                    drop(target);
+                 }
+-                None => {
+-                    quote! {
+-                        let ret = obj.lock().unwrap().#method_name(#method_args);
+-                    }
++            } else {
++                // Preserve conversion timing and invocation for ordinary exports.
++                quote! {
++                    #make_args
++                    #debug
++                    let ret = #lock_target.#method_name(#method_args);
+                 }
+             };
+ 
+@@ -263,8 +302,7 @@ pub fn generate_dbus_exporter(attr: TokenStream, item: TokenStream) -> TokenStre
+                                           obj: &mut #obj_type,
+                                           #dbus_input_args |
+                       -> Result<(#output_type), dbus_crossroads::MethodErr> {
+-                    #make_args
+-                    #debug
++                    #sender_check
+                     #method_call
+                     #ret
+                 };
+@@ -976,6 +1014,10 @@ pub fn dbus_proxy_obj(attr: TokenStream, item: TokenStream) -> TokenStream {
+                 self.objpath.to_string().clone()
+             }
+ 
++            fn get_remote_owner(&self) -> String {
++                self.remote.to_string()
++            }
++
+             fn unregister(&mut self, id: u32) -> bool {
+                 self.disconnect_watcher.lock().unwrap().remove(self.remote.clone(), id)
+             }
+diff --git a/system/gd/rust/linux/dbus_projection/src/lib.rs b/system/gd/rust/linux/dbus_projection/src/lib.rs
+index 4695663806..40c6136f8b 100644
+--- a/system/gd/rust/linux/dbus_projection/src/lib.rs
++++ b/system/gd/rust/linux/dbus_projection/src/lib.rs
+@@ -110,6 +110,11 @@ impl DisconnectWatcher {
+         conn.start_receive(
+             mr,
+             Box::new(move |msg, _conn| {
++                // Client lifetime is authority for audio leases. Ordinary bus
++                // clients must not be able to forge another owner's departure.
++                if msg.sender().map(|s| s.to_string()).as_deref() != Some("org.freedesktop.DBus") {
++                    return true;
++                }
+                 // The args are "address", "old address", "new address".
+                 // https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-owner-changed
+                 let (addr, old, new) = msg.get3::<String, String, String>();
+diff --git a/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs b/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
+index 9b22d7952a..07c7f975c3 100644
+--- a/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
++++ b/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
+@@ -11,7 +11,7 @@ use crate::powerd_suspend_manager::SuspendManagerContext;
+ 
+ use crate::iface_bluetooth_experimental::IBluetoothExperimental;
+ use crate::iface_bluetooth_manager::{
+-    AdapterWithEnabled, IBluetoothManager, IBluetoothManagerCallback,
++    AdapterWithEnabled, IBluetoothManager, IBluetoothManagerCallback, RfkillState,
+ };
+ use crate::state_machine::{
+     state_to_enabled, AdapterState, Message, ProcessState, StateMachineProxy, VirtualHciIndex,
+@@ -89,6 +89,50 @@ impl BluetoothManager {
+ }
+ 
+ impl IBluetoothManager for BluetoothManager {
++    fn get_rfkill_state(&mut self, hci_interface: i32) -> RfkillState {
++        let real_hci = self
++            .proxy
++            .get_state(VirtualHciIndex(hci_interface), |state| Some(state.real_hci.to_i32()));
++        match real_hci
++            .and_then(|hci| crate::rfkill::read(std::path::Path::new("/sys/class/rfkill"), hci))
++        {
++            Some(state) => RfkillState {
++                available: true,
++                hard_blocked: state.hard_blocked,
++                soft_blocked: state.soft_blocked,
++            },
++            None => RfkillState::default(),
++        }
++    }
++
++    fn set_rfkill_blocked(&mut self, hci_interface: i32, blocked: bool) -> bool {
++        use std::io::Write;
++        use std::os::unix::fs::OpenOptionsExt;
++        let real_hci = self
++            .proxy
++            .get_state(VirtualHciIndex(hci_interface), |state| Some(state.real_hci.to_i32()));
++        match real_hci {
++            Some(hci) => crate::rfkill::set(
++                std::path::Path::new("/sys/class/rfkill"),
++                hci,
++                blocked,
++                |event| {
++                    // Nonblocking and write-only: never drain the kernel event stream or wait for it.
++                    // A short write is an error; do not issue a second partial rfkill record.
++                    let mut fd = std::fs::OpenOptions::new()
++                        .write(true)
++                        .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC | libc::O_NOFOLLOW)
++                        .open("/dev/rfkill")?;
++                    if fd.write(event)? != event.len() {
++                        return Err(std::io::ErrorKind::WriteZero.into());
++                    }
++                    Ok(())
++                },
++            ),
++            None => false,
++        }
++    }
++
+     fn start(&mut self, hci: i32) {
+         let hci = VirtualHciIndex(hci);
+         warn!("Starting {}", hci);
+diff --git a/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs b/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs
+index 116fa345e3..bdd150057e 100644
+--- a/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs
++++ b/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs
+@@ -9,6 +9,7 @@ use btstack::RPCProxy;
+ use crate::dbus_arg::{DBusArg, DBusArgError, RefArgToRust};
+ use crate::iface_bluetooth_manager::{
+     AdapterWithEnabled, BluetoothManagerMixin, IBluetoothManager, IBluetoothManagerCallback,
++    RfkillState,
+ };
+ 
+ #[dbus_propmap(AdapterWithEnabled)]
+@@ -17,6 +18,13 @@ pub struct AdapterWithEnabledDbus {
+     enabled: bool,
+ }
+ 
++#[dbus_propmap(RfkillState)]
++pub struct RfkillStateDbus {
++    available: bool,
++    hard_blocked: bool,
++    soft_blocked: bool,
++}
++
+ /// D-Bus projection of IBluetoothManager.
+ #[allow(dead_code)]
+ struct BluetoothManagerDBus {}
+@@ -43,6 +51,16 @@ impl IBluetoothManager for BluetoothManagerDBus {
+         dbus_generated!()
+     }
+ 
++    #[dbus_method("GetRfkillState")]
++    fn get_rfkill_state(&mut self, hci_interface: i32) -> RfkillState {
++        dbus_generated!()
++    }
++
++    #[dbus_method("SetRfkillBlocked")]
++    fn set_rfkill_blocked(&mut self, hci_interface: i32, blocked: bool) -> bool {
++        dbus_generated!()
++    }
++
+     #[dbus_method("RegisterCallback")]
+     fn register_callback(&mut self, callback: Box<dyn IBluetoothManagerCallback + Send>) {
+         dbus_generated!()
+diff --git a/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs b/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
+index d516e005e0..db224efefe 100644
+--- a/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
++++ b/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
+@@ -10,6 +10,15 @@ pub struct AdapterWithEnabled {
+     pub enabled: bool,
+ }
+ 
++/// Per-controller Linux rfkill state. Unavailable means the mapping or state could not be read;
++/// callers must not interpret unavailable as an unblocked radio.
++#[derive(Debug, Default)]
++pub struct RfkillState {
++    pub available: bool,
++    pub hard_blocked: bool,
++    pub soft_blocked: bool,
++}
++
+ /// A mixin of the several interfaces. The naming of the fields in the mixin must match
+ /// what is listed in the `generate_dbus_exporter` invocation.
+ pub struct BluetoothManagerMixin {
+@@ -28,6 +37,16 @@ pub trait IBluetoothManager {
+     /// Returns whether an adapter is enabled.
+     fn get_adapter_enabled(&mut self, hci_interface: i32) -> bool;
+ 
++    /// Reads the rfkill switch for a virtual adapter. Defaults preserve existing proxy clients.
++    fn get_rfkill_state(&mut self, _hci_interface: i32) -> RfkillState {
++        RfkillState::default()
++    }
++
++    /// Changes only this adapter's software block; cannot override a hardware block.
++    fn set_rfkill_blocked(&mut self, _hci_interface: i32, _blocked: bool) -> bool {
++        false
++    }
++
+     /// Registers a callback to the Bluetooth manager state.
+     fn register_callback(&mut self, callback: Box<dyn IBluetoothManagerCallback + Send>);
+ 
+diff --git a/system/gd/rust/linux/mgmt/src/lib.rs b/system/gd/rust/linux/mgmt/src/lib.rs
+index 131dd09b8e..d48d199eb4 100644
+--- a/system/gd/rust/linux/mgmt/src/lib.rs
++++ b/system/gd/rust/linux/mgmt/src/lib.rs
+@@ -10,6 +10,7 @@ pub mod migrate;
+ pub mod powerd_suspend_manager;
+ pub mod service_watcher;
+ pub mod state_machine;
++mod rfkill;
+ mod time;
+ 
+ // protoc-rust generates all modules and exports them in mod.rs
+diff --git a/system/gd/rust/linux/service/src/iface_bluetooth.rs b/system/gd/rust/linux/service/src/iface_bluetooth.rs
+index 985e7b4f38..06ee7dc291 100644
+--- a/system/gd/rust/linux/service/src/iface_bluetooth.rs
++++ b/system/gd/rust/linux/service/src/iface_bluetooth.rs
+@@ -853,6 +853,22 @@ impl IBluetoothSocketManagerCallbacks for IBluetoothSocketManagerCallbacksDBus {
+     }
+ }
+ 
++// The sender comes from the bus message, never a client-provided string.
++// Called by the exporter while holding the SocketManager mutation lock.
++fn authorize_socket_callback(
++    manager: &BluetoothSocketManager,
++    context: &dbus_crossroads::Context,
++    callback: &CallbackId,
++) -> Result<(), dbus_crossroads::MethodErr> {
++    let allowed = context.message().sender()
++        .map_or(false, |sender| manager.is_callback_owner(*callback, &sender));
++    if allowed {
++        Ok(())
++    } else {
++        Err(("org.freedesktop.DBus.Error.AccessDenied", "Socket callback belongs to another client").into())
++    }
++}
++
+ #[allow(dead_code)]
+ struct IBluetoothSocketManagerDBus {}
+ 
+@@ -871,32 +887,32 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("UnregisterCallback")]
++    #[dbus_method("UnregisterCallback", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn unregister_callback(&mut self, callback: CallbackId) -> bool {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingInsecureL2capChannel")]
++    #[dbus_method("ListenUsingInsecureL2capChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_insecure_l2cap_channel(&mut self, callback: CallbackId) -> SocketResult {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingInsecureL2capLeChannel")]
++    #[dbus_method("ListenUsingInsecureL2capLeChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_insecure_l2cap_le_channel(&mut self, callback: CallbackId) -> SocketResult {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingL2capChannel")]
++    #[dbus_method("ListenUsingL2capChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_l2cap_channel(&mut self, callback: CallbackId) -> SocketResult {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingL2capLeChannel")]
++    #[dbus_method("ListenUsingL2capLeChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_l2cap_le_channel(&mut self, callback: CallbackId) -> SocketResult {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingInsecureRfcommWithServiceRecord")]
++    #[dbus_method("ListenUsingInsecureRfcommWithServiceRecord", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_insecure_rfcomm_with_service_record(
+         &mut self,
+         callback: CallbackId,
+@@ -906,7 +922,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingRfcomm")]
++    #[dbus_method("ListenUsingRfcomm", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_rfcomm(
+         &mut self,
+         callback: CallbackId,
+@@ -918,7 +934,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("ListenUsingRfcommWithServiceRecord")]
++    #[dbus_method("ListenUsingRfcommWithServiceRecord", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn listen_using_rfcomm_with_service_record(
+         &mut self,
+         callback: CallbackId,
+@@ -928,7 +944,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("CreateInsecureL2capChannel")]
++    #[dbus_method("CreateInsecureL2capChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn create_insecure_l2cap_channel(
+         &mut self,
+         callback: CallbackId,
+@@ -938,7 +954,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("CreateInsecureL2capLeChannel")]
++    #[dbus_method("CreateInsecureL2capLeChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn create_insecure_l2cap_le_channel(
+         &mut self,
+         callback: CallbackId,
+@@ -948,7 +964,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("CreateL2capChannel")]
++    #[dbus_method("CreateL2capChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn create_l2cap_channel(
+         &mut self,
+         callback: CallbackId,
+@@ -958,7 +974,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("CreateL2capLeChannel")]
++    #[dbus_method("CreateL2capLeChannel", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn create_l2cap_le_channel(
+         &mut self,
+         callback: CallbackId,
+@@ -968,7 +984,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("CreateInsecureRfcommSocketToServiceRecord")]
++    #[dbus_method("CreateInsecureRfcommSocketToServiceRecord", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn create_insecure_rfcomm_socket_to_service_record(
+         &mut self,
+         callback: CallbackId,
+@@ -978,7 +994,7 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("CreateRfcommSocketToServiceRecord")]
++    #[dbus_method("CreateRfcommSocketToServiceRecord", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn create_rfcomm_socket_to_service_record(
+         &mut self,
+         callback: CallbackId,
+@@ -988,12 +1004,12 @@ impl IBluetoothSocketManager for IBluetoothSocketManagerDBus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("Accept")]
++    #[dbus_method("Accept", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn accept(&mut self, callback: CallbackId, id: SocketId, timeout_ms: Option<u32>) -> BtStatus {
+         dbus_generated!()
+     }
+ 
+-    #[dbus_method("Close")]
++    #[dbus_method("Close", DBusLog::Enable(DBusLogOptions::LogAll, DBusLogVerbosity::Verbose), authorize_socket_callback(callback))]
+     fn close(&mut self, callback: CallbackId, id: SocketId) -> BtStatus {
+         dbus_generated!()
+     }
+diff --git a/system/gd/rust/linux/service/src/iface_bluetooth_media.rs b/system/gd/rust/linux/service/src/iface_bluetooth_media.rs
+index 8da5e60683..62883d73f1 100644
+--- a/system/gd/rust/linux/service/src/iface_bluetooth_media.rs
++++ b/system/gd/rust/linux/service/src/iface_bluetooth_media.rs
+@@ -10,7 +10,9 @@ use bt_topshim::profiles::le_audio::{
+     BtLeAudioGroupStreamStatus, BtLeAudioSource, BtLeAudioUnicastMonitorModeStatus, BtLeAudioUsage,
+     BtLePcmConfig, BtLeStreamStartedStatus,
+ };
+-use btstack::bluetooth_media::{BluetoothAudioDevice, IBluetoothMedia, IBluetoothMediaCallback};
++use btstack::bluetooth_media::{
++    A2dpPcmConfig, AudioSessionPosition, BluetoothAudioDevice, HfpPcmConfig, IBluetoothMedia, IBluetoothMediaCallback,
++};
+ use btstack::RPCProxy;
+ 
+ use dbus::arg::RefArg;
+@@ -62,6 +64,37 @@ pub struct BtLePcmConfigDBus {
+     channels_count: u8,
+ }
+ 
++#[dbus_propmap(AudioSessionPosition)]
++pub struct AudioSessionPositionDBus {
++    valid: bool,
++    total_bytes_read: u64,
++    data_position_sec: i64,
++    data_position_nsec: i64,
++    remote_delay_report_ns: u64,
++}
++
++#[dbus_propmap(A2dpPcmConfig)]
++pub struct A2dpPcmConfigDBus {
++    ready: bool,
++    sample_rate: u32,
++    bits_per_sample: u8,
++    channels_count: u8,
++    generation: u64,
++    socket_path: String,
++}
++
++#[dbus_propmap(HfpPcmConfig)]
++pub struct HfpPcmConfigDBus {
++    ready: bool,
++    active: bool,
++    sample_rate: u32,
++    bits_per_sample: u8,
++    channels_count: u8,
++    codec: u32,
++    socket_path: String,
++    generation: u64,
++}
++
+ impl_dbus_arg_from_into!(HfpCodecBitId, i32);
+ impl_dbus_arg_from_into!(HfpCodecFormat, i32);
+ impl_dbus_arg_from_into!(BtLeAudioUsage, i32);
+@@ -365,6 +398,28 @@ impl IBluetoothMedia for IBluetoothMediaDBus {
+         dbus_generated!()
+     }
+ 
++    #[dbus_method("ReserveAudioSession")]
++    fn reserve_audio_session(&mut self, address: RawAddress, hfp: bool,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> u64 { dbus_generated!() }
++
++    #[dbus_method("StartAudioSession")]
++    fn start_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>,
++        listener: File) -> bool { dbus_generated!() }
++
++    #[dbus_method("StopAudioSession")]
++    fn stop_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>) -> bool { dbus_generated!() }
++
++    #[dbus_method("GetConnectedAudioDevices")]
++    fn get_connected_audio_devices(&self) -> Vec<BluetoothAudioDevice> { dbus_generated!() }
++
++    #[dbus_method("GetA2dpPcmConfig", DBusLog::Disable)]
++    fn get_a2dp_pcm_config(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> A2dpPcmConfig { dbus_generated!() }
++
++    #[dbus_method("GetAudioSessionPosition", DBusLog::Disable)]
++    fn get_audio_session_position(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> AudioSessionPosition { dbus_generated!() }
++
+     #[dbus_method("StartAudioRequest")]
+     fn start_audio_request(&mut self, connection_listener: File) -> bool {
+         dbus_generated!()
+@@ -396,6 +451,11 @@ impl IBluetoothMedia for IBluetoothMediaDBus {
+         dbus_generated!()
+     }
+ 
++    #[dbus_method("GetHfpPcmConfig", DBusLog::Disable)]
++    fn get_hfp_pcm_config(&self, address: RawAddress) -> HfpPcmConfig {
++        dbus_generated!()
++    }
++
+     #[dbus_method("StopScoCall")]
+     fn stop_sco_call(&mut self, address: RawAddress, connection_listener: File) {
+         dbus_generated!()
+diff --git a/system/gd/rust/linux/service/src/main.rs b/system/gd/rust/linux/service/src/main.rs
+index f326bb62ee..32e5f93a32 100644
+--- a/system/gd/rust/linux/service/src/main.rs
++++ b/system/gd/rust/linux/service/src/main.rs
+@@ -307,5 +307,9 @@ extern "C" fn handle_sigterm(_signum: i32) {
+     }
+ 
+     log::debug!("Sigterm completed");
+-    std::process::exit(0);
++    // Cleanup is best-effort and native threads can still be running, especially
++    // when SIGTERM interrupts initialization. Running C++ global destructors
++    // here destroys objects (such as the flag provider) those threads still use.
++    // The OS reclaims process resources after the explicit cleanup above.
++    unsafe { nix::libc::_exit(0) };
+ }
+diff --git a/system/gd/rust/linux/stack/src/bluetooth_media.rs b/system/gd/rust/linux/stack/src/bluetooth_media.rs
+index c8ea9bcb7e..1a1edac546 100644
+--- a/system/gd/rust/linux/stack/src/bluetooth_media.rs
++++ b/system/gd/rust/linux/stack/src/bluetooth_media.rs
+@@ -16,6 +16,8 @@ use bt_topshim::profiles::csis::{
+     BtCsisConnectionState, CsisClient, CsisClientCallbacks, CsisClientCallbacksDispatcher,
+ };
+ use bt_topshim::profiles::hfp::{interop_disable_hf_profile, interop_insert_call_when_sco_start};
++pub use bt_topshim::profiles::hfp::ffi::HfpPcmConfig;
++pub use bt_topshim::profiles::a2dp::ffi::A2dpPcmConfig;
+ use bt_topshim::profiles::hfp::{
+     BthfAudioState, BthfConnectionState, CallHoldCommand, CallInfo, CallState, EscoCodingFormat,
+     Hfp, HfpCallbacks, HfpCallbacksDispatcher, HfpCodecBitId, HfpCodecFormat, HfpCodecId,
+@@ -166,6 +168,18 @@ pub trait IBluetoothMedia {
+     // Set the HFP speaker volume. Valid volume specified by the HFP spec should
+     // be in the range of 0-15.
+     fn set_hfp_volume(&mut self, volume: u8, address: RawAddress);
++    /// Reserve without starting transport. The owner proxy authenticates the bus caller.
++    fn reserve_audio_session(&mut self, address: RawAddress, hfp: bool,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> u64;
++    fn start_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>,
++        listener: File) -> bool;
++    fn stop_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>) -> bool;
++    fn get_connected_audio_devices(&self) -> Vec<BluetoothAudioDevice>;
++    fn get_a2dp_pcm_config(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> A2dpPcmConfig;
++    fn get_audio_session_position(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> AudioSessionPosition;
++
+     fn start_audio_request(&mut self, connection_listener: File) -> bool;
+     fn stop_audio_request(&mut self, connection_listener: File);
+ 
+@@ -175,6 +189,8 @@ pub trait IBluetoothMedia {
+     /// Returns the negotiated codec (CVSD=1, mSBC=2, LC3=4) to use if HFP audio has started.
+     /// Returns 0 if HFP audio hasn't started.
+     fn get_hfp_audio_final_codecs(&mut self, address: RawAddress) -> u8;
++    /// Live software PCM transport; unavailable during negotiation or offload.
++    fn get_hfp_pcm_config(&self, address: RawAddress) -> HfpPcmConfig;
+ 
+     fn get_presentation_position(&mut self) -> PresentationPosition;
+ 
+@@ -386,6 +402,8 @@ impl BluetoothAudioDevice {
+ }
+ /// Actions that `BluetoothMedia` can take on behalf of the stack.
+ pub enum MediaActions {
++    CancelAudioSession(u64),
++    ExpireAudioReservation(u64),
+     Connect(RawAddress),
+     Disconnect(RawAddress),
+     ForceEnterConnected(RawAddress), // Only used for qualification.
+@@ -461,6 +479,30 @@ impl From<TelephonyEvent> for u8 {
+     }
+ }
+ 
++/// Position belongs to an authenticated live A2DP lease, never another device.
++#[derive(Default)]
++pub struct AudioSessionPosition {
++    pub valid: bool,
++    pub total_bytes_read: u64,
++    pub data_position_sec: i64,
++    pub data_position_nsec: i64,
++    pub remote_delay_report_ns: u64,
++}
++
++struct AudioSession {
++    token: u64,
++    address: RawAddress,
++    hfp: bool,
++    owner: Box<dyn IBluetoothMediaCallback + Send>,
++    disconnect_id: u32,
++    started: bool,
++    stopping: bool,
++}
++
++impl Drop for AudioSession {
++    fn drop(&mut self) { self.owner.unregister(self.disconnect_id); }
++}
++
+ pub struct BluetoothMedia {
+     battery_provider_manager: Arc<Mutex<Box<BatteryProviderManager>>>,
+     battery_provider_id: u32,
+@@ -508,6 +550,8 @@ pub struct BluetoothMedia {
+     csis: CsisClient,
+     csis_states: HashMap<RawAddress, BtCsisConnectionState>,
+     is_le_audio_only_enabled: bool, // TODO: remove this once there is dual mode.
++    audio_session: Option<AudioSession>,
++    next_audio_token: u64,
+     hfp_audio_connection_listener: Option<File>,
+     a2dp_audio_connection_listener: Option<File>,
+ }
+@@ -584,12 +628,17 @@ impl BluetoothMedia {
+             csis,
+             csis_states: HashMap::new(),
+             is_le_audio_only_enabled: false,
++            audio_session: None,
++            next_audio_token: 0,
+             hfp_audio_connection_listener: None,
+             a2dp_audio_connection_listener: None,
+         }
+     }
+ 
+     pub fn cleanup(&mut self) -> bool {
++        self.audio_session = None;
++        self.hfp_audio_connection_listener = None;
++        self.a2dp_audio_connection_listener = None;
+         for profile in MEDIA_PROFILE_ENABLE_ORDER.iter().rev() {
+             self.disable_profile(&profile);
+         }
+@@ -597,6 +646,43 @@ impl BluetoothMedia {
+         true
+     }
+ 
++    fn session_matches(&self, address: RawAddress, hfp: bool) -> bool {
++        self.audio_session.as_ref().map_or(false, |s| s.address == address && s.hfp == hfp)
++    }
++
++    fn session_owner(&self, token: u64, owner: &dyn IBluetoothMediaCallback) -> bool {
++        self.audio_session.as_ref().map_or(false, |s|
++            s.token == token && s.owner.get_remote_owner() == owner.get_remote_owner())
++    }
++
++    fn cancel_audio_session(&mut self, token: u64) {
++        let Some(session) = self.audio_session.as_mut().filter(|s| s.token == token) else { return; };
++        if !session.started {
++            self.audio_session = None;
++            return;
++        }
++        session.stopping = true;
++        let (address, hfp) = (session.address, session.hfp);
++        // Keep the reservation until a terminal callback. In particular a stop
++        // while Connecting may be ignored natively; Connected retries it below.
++        if hfp {
++            self.hfp_audio_connection_listener = None;
++            self.hfp.disconnect_audio(address);
++        } else {
++            self.a2dp_audio_connection_listener = None;
++            self.a2dp.stop_audio_for_peer(address);
++        }
++    }
++
++    fn audio_session_state(&mut self, address: RawAddress, hfp: bool, terminal: bool) {
++        if !self.session_matches(address, hfp) { return; }
++        if terminal {
++            self.audio_session = None;
++        } else if let Some(s) = self.audio_session.as_ref().filter(|s| s.stopping) {
++            self.cancel_audio_session(s.token);
++        }
++    }
++
+     fn is_profile_connected(&self, addr: &RawAddress, profile: &Profile) -> bool {
+         self.is_any_profile_connected(addr, &[*profile])
+     }
+@@ -1276,7 +1362,8 @@ impl BluetoothMedia {
+                             return;
+                         }
+ 
+-                        if self.a2dp_audio_connection_listener.is_some() {
++                        if self.a2dp_audio_connection_listener.is_some()
++                            && self.audio_session.as_ref().map_or(true, |s| !s.hfp && s.address == addr) {
+                             let listener = self.a2dp_audio_connection_listener.take().unwrap();
+                             let data: Vec<u8> = vec![0];
+                             self.write_data_to_listener(listener, data);
+@@ -1285,6 +1372,7 @@ impl BluetoothMedia {
+                         self.a2dp_states.remove(&addr);
+                         self.a2dp_caps.remove(&addr);
+                         self.a2dp_audio_state.remove(&addr);
++                        self.audio_session_state(addr, false, true);
+                         self.rm_connected_profile(addr, Profile::A2dpSink, true);
+                     }
+                     _ => {
+@@ -1300,13 +1388,15 @@ impl BluetoothMedia {
+                     _ => 0,
+                 };
+ 
+-                if self.a2dp_audio_connection_listener.is_some() {
++                if self.a2dp_audio_connection_listener.is_some()
++                            && self.audio_session.as_ref().map_or(true, |s| !s.hfp && s.address == addr) {
+                     let listener = self.a2dp_audio_connection_listener.take().unwrap();
+                     let data: Vec<u8> = vec![started];
+                     self.write_data_to_listener(listener, data);
+                 }
+ 
+                 self.a2dp_audio_state.insert(addr, state);
++                self.audio_session_state(addr, false, started == 0);
+             }
+             A2dpCallbacks::AudioConfig(addr, _config, _local_caps, a2dp_caps) => {
+                 debug!("[{}]: a2dp updated audio config: {:?}", DisplayAddress(&addr), a2dp_caps);
+@@ -1471,6 +1561,12 @@ impl BluetoothMedia {
+ 
+     pub fn dispatch_media_actions(&mut self, action: MediaActions) {
+         match action {
++            MediaActions::ExpireAudioReservation(token) => {
++                if self.audio_session.as_ref().map_or(false, |s| s.token == token && !s.started) {
++                    self.cancel_audio_session(token);
++                }
++            }
++            MediaActions::CancelAudioSession(token) => { self.cancel_audio_session(token); }
+             MediaActions::Connect(address) => self.connect(address),
+             MediaActions::Disconnect(address) => self.disconnect(address),
+             MediaActions::ForceEnterConnected(address) => self.force_enter_connected(address),
+@@ -1525,6 +1621,7 @@ impl BluetoothMedia {
+ 
+                         // The device may not support codec-negotiation,
+                         // in which case we shall assume it supports CVSD at this point.
++                        self.hfp_states.insert(addr, BthfConnectionState::SlcConnected);
+                         self.hfp_cap.entry(addr).or_insert(HfpCodecFormat::CVSD);
+                         self.add_connected_profile(addr, Profile::Hfp);
+ 
+@@ -1550,7 +1647,8 @@ impl BluetoothMedia {
+                             return;
+                         }
+ 
+-                        if self.hfp_audio_connection_listener.is_some() {
++                        if self.hfp_audio_connection_listener.is_some()
++                            && self.audio_session.as_ref().map_or(true, |s| s.hfp && s.address == addr) {
+                             let listener = self.hfp_audio_connection_listener.take().unwrap();
+                             let data: Vec<u8> = vec![0];
+                             self.write_data_to_listener(listener, data);
+@@ -1560,6 +1658,7 @@ impl BluetoothMedia {
+                         self.hfp_states.remove(&addr);
+                         self.hfp_cap.remove(&addr);
+                         self.hfp_audio_state.remove(&addr);
++                        self.audio_session_state(addr, true, true);
+                         self.rm_connected_profile(addr, Profile::Hfp, true);
+                     }
+                     BthfConnectionState::Connecting => {
+@@ -1586,13 +1685,15 @@ impl BluetoothMedia {
+ 
+                         self.hfp_audio_state.insert(addr, state);
+ 
+-                        if self.hfp_audio_connection_listener.is_some() {
++                        if self.hfp_audio_connection_listener.is_some()
++                            && self.audio_session.as_ref().map_or(true, |s| s.hfp && s.address == addr) {
+                             let listener = self.hfp_audio_connection_listener.take().unwrap();
+                             let codec = self.get_hfp_audio_final_codecs(addr);
+                             let data: Vec<u8> = vec![codec];
+                             self.write_data_to_listener(listener, data);
+                         }
+ 
++                        self.audio_session_state(addr, true, false);
+                         if self.should_insert_call_when_sco_start(addr) {
+                             // This triggers a +CIEV command to set the call status for HFP devices.
+                             // It is required for some devices to provide sound.
+@@ -1603,16 +1704,16 @@ impl BluetoothMedia {
+                     BthfAudioState::Disconnected => {
+                         info!("[{}]: hfp audio disconnected.", DisplayAddress(&addr));
+ 
+-                        if self.hfp_audio_connection_listener.is_some() {
++                        if self.hfp_audio_connection_listener.is_some()
++                            && self.audio_session.as_ref().map_or(true, |s| s.hfp && s.address == addr) {
+                             let listener = self.hfp_audio_connection_listener.take().unwrap();
+                             let data: Vec<u8> = vec![0];
+                             self.write_data_to_listener(listener, data);
+                         }
+ 
+                         // Ignore disconnected -> disconnected
+-                        if let Some(BthfAudioState::Connected) =
+-                            self.hfp_audio_state.insert(addr, state)
+-                        {
++                        if matches!(self.hfp_audio_state.insert(addr, state),
++                            Some(BthfAudioState::Connected | BthfAudioState::Disconnecting)) {
+                             self.callbacks.lock().unwrap().for_all_callbacks(|callback| {
+                                 callback.on_hfp_audio_disconnected(addr);
+                             });
+@@ -1629,13 +1730,16 @@ impl BluetoothMedia {
+                             );
+                         }
+ 
++                        self.audio_session_state(addr, true, true);
+                         // Resume the A2DP stream when a phone call ended (per MPS v1.0).
+                         self.try_a2dp_resume();
+                     }
+                     BthfAudioState::Connecting => {
++                        self.hfp_audio_state.insert(addr, state);
+                         info!("[{}]: hfp audio connecting.", DisplayAddress(&addr));
+                     }
+                     BthfAudioState::Disconnecting => {
++                        self.hfp_audio_state.insert(addr, state);
+                         info!("[{}]: hfp audio disconnecting.", DisplayAddress(&addr));
+                     }
+                 }
+@@ -2654,11 +2758,13 @@ impl BluetoothMedia {
+     }
+ 
+     fn start_audio_request_impl(&mut self) -> bool {
++        if self.audio_session.is_some() { return false; }
+         debug!("Start audio request");
+         self.a2dp.start_audio_request()
+     }
+ 
+     fn suspend_audio_request_impl(&mut self) {
++        if self.audio_session.is_some() { return; }
+         self.a2dp.suspend_audio_request();
+     }
+ 
+@@ -2697,8 +2803,23 @@ impl BluetoothMedia {
+         sco_offload: bool,
+         disabled_codecs: HfpCodecBitId,
+     ) -> bool {
++        if self.audio_session.is_some() { return false; }
++        self.start_sco_transport(addr, sco_offload, disabled_codecs)
++    }
++
++    fn start_sco_transport(&mut self, addr: RawAddress, sco_offload: bool,
++        disabled_codecs: HfpCodecBitId) -> bool {
+         info!("Start sco call for {}", DisplayAddress(&addr));
+ 
++        if self.hfp_states.get(&addr) != Some(&BthfConnectionState::SlcConnected) {
++            warn!("Rejecting SCO start without an HFP service-level connection");
++            return false;
++        }
++        if self.hfp_audio_state.values().any(|state| *state != BthfAudioState::Disconnected) {
++            warn!("Rejecting SCO start while another SCO operation is active");
++            return false;
++        }
++
+         let Ok(disabled_codecs) = disabled_codecs.try_into() else {
+             warn!("Can't parse disabled_codecs");
+             return false;
+@@ -2707,11 +2828,15 @@ impl BluetoothMedia {
+             warn!("SCO connect_audio status failed");
+             return false;
+         }
++        // Reserve the global SCO endpoint before returning acceptance, rather
++        // than waiting for the asynchronous Connecting callback.
++        self.hfp_audio_state.insert(addr, BthfAudioState::Connecting);
+         info!("SCO connect_audio status success");
+         true
+     }
+ 
+     fn stop_sco_call_impl(&mut self, addr: RawAddress) {
++        if self.audio_session.is_some() { return; }
+         info!("Stop sco call for {}", DisplayAddress(&addr));
+         self.hfp.disconnect_audio(addr);
+     }
+@@ -3457,6 +3582,7 @@ impl IBluetoothMedia for BluetoothMedia {
+     }
+ 
+     fn cleanup(&mut self) -> bool {
++        if self.audio_session.is_some() { return false; }
+         self.cleanup()
+     }
+ 
+@@ -3551,6 +3677,7 @@ impl IBluetoothMedia for BluetoothMedia {
+     }
+ 
+     fn set_active_device(&mut self, addr: RawAddress) {
++        if self.audio_session.is_some() { return; }
+         match self.a2dp_states.get(&addr) {
+             Some(BtavConnectionState::Connected) => {
+                 self.a2dp.set_active_device(addr);
+@@ -3561,6 +3688,7 @@ impl IBluetoothMedia for BluetoothMedia {
+     }
+ 
+     fn reset_active_device(&mut self) {
++        if self.audio_session.is_some() { return; }
+         // During MPS tests, there might be some A2DP stream manipulation unexpected to CRAS.
+         // CRAS would then attempt to reset the active device. Ignore it during test.
+         if !self.is_complete_profiles_required() {
+@@ -3572,6 +3700,7 @@ impl IBluetoothMedia for BluetoothMedia {
+     }
+ 
+     fn set_hfp_active_device(&mut self, addr: RawAddress) {
++        if self.audio_session.is_some() { return; }
+         if self.hfp_states.get(&addr) == Some(&BthfConnectionState::SlcConnected) {
+             self.hfp.set_active_device(addr);
+         } else {
+@@ -3587,6 +3716,7 @@ impl IBluetoothMedia for BluetoothMedia {
+         bits_per_sample: A2dpCodecBitsPerSample,
+         channel_mode: A2dpCodecChannelMode,
+     ) -> bool {
++        if self.audio_session.is_some() { return false; }
+         if self.a2dp_states.get(&addr).is_none() {
+             warn!(
+                 "[{}]: Ignore set config event for unconnected or disconnected A2DP device",
+@@ -3676,16 +3806,128 @@ impl IBluetoothMedia for BluetoothMedia {
+         self.hfp.set_volume(vol, addr);
+     }
+ 
+-    fn start_audio_request(&mut self, connection_listener: File) -> bool {
+-        if self.a2dp_audio_connection_listener.is_some() {
+-            warn!("start_audio_request: replacing an unresolved listener");
++    fn reserve_audio_session(&mut self, address: RawAddress, hfp: bool,
++        mut owner: Box<dyn IBluetoothMediaCallback + Send>) -> u64 {
++        if !self.initialized || owner.get_remote_owner().is_empty() || self.audio_session.is_some()
++            || self.hfp_audio_connection_listener.is_some() || self.a2dp_audio_connection_listener.is_some()
++            || self.hfp_audio_state.values().any(|s| *s != BthfAudioState::Disconnected)
++            || self.a2dp_audio_state.iter().any(|(peer, s)|
++                *s == BtavAudioState::Started && (hfp || *peer != address))
++            || (hfp && self.hfp_states.get(&address) != Some(&BthfConnectionState::SlcConnected))
++            || (!hfp && self.a2dp_states.get(&address) != Some(&BtavConnectionState::Connected)) {
++            return 0;
++        }
++        let Some(token) = self.next_audio_token.checked_add(1) else { return 0; };
++        self.next_audio_token = token;
++        let tx = self.tx.clone();
++        let disconnect_id = owner.register_disconnect(Box::new(move |_| {
++            let tx = tx.clone();
++            topstack::get_runtime().spawn(async move {
++                let _ = tx.send(Message::Media(MediaActions::CancelAudioSession(token))).await;
++            });
++        }));
++        self.audio_session = Some(AudioSession { token, address, hfp, owner, disconnect_id,
++            started: false, stopping: false });
++        // Also bound abandoned reservations when the caller vanished before
++        // its disconnect observer was installed. Starting consumes this phase.
++        let tx = self.tx.clone();
++        topstack::get_runtime().spawn(async move {
++            sleep(Duration::from_secs(10)).await;
++            let _ = tx.send(Message::Media(MediaActions::ExpireAudioReservation(token))).await;
++        });
++        token
++    }
++
++    fn start_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>,
++        listener: File) -> bool {
++        if !self.session_owner(token, owner.as_ref()) { return false; }
++        let session = self.audio_session.as_mut().unwrap();
++        if session.started || session.stopping { return false; }
++        session.started = true;
++        let (address, hfp) = (session.address, session.hfp);
++        let accepted = if hfp {
++            self.hfp_audio_connection_listener = Some(listener);
++            self.hfp.set_active_device(address);
++            self.start_sco_transport(address, false, HfpCodecBitId::LC3)
++        } else {
++            self.a2dp_audio_connection_listener = Some(listener);
++            self.a2dp.start_audio_for_peer(address)
++        };
++        // A remote-started stream was already reported before this caller
++        // registered its listener. Native START reopens its PCM endpoint and
++        // checks the exact active peer; provide the already-completed ACK.
++        if accepted && !hfp && self.a2dp_audio_state.get(&address) == Some(&BtavAudioState::Started)
++            && self.a2dp.get_position_for_peer(address).valid {
++            if let Some(listener) = self.a2dp_audio_connection_listener.take() {
++                self.write_data_to_listener(listener, vec![1]);
++            }
+         }
++        if !accepted {
++            self.hfp_audio_connection_listener = None;
++            self.a2dp_audio_connection_listener = None;
++            self.audio_session = None;
++        }
++        accepted
++    }
+ 
++    fn stop_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>) -> bool {
++        // Old tokens are safe no-ops; tokens never repeat within this daemon.
++        if self.audio_session.as_ref().map_or(true, |s| s.token != token) { return true; }
++        if !self.session_owner(token, owner.as_ref()) { return false; }
++        self.cancel_audio_session(token);
++        true
++    }
++
++    fn get_connected_audio_devices(&self) -> Vec<BluetoothAudioDevice> {
++        let addresses: Vec<RawAddress> = self.device_states.lock().unwrap().iter()
++            .filter_map(|(addr, state)| if *state == DeviceConnectionStates::FullyConnected {
++                Some(*addr)
++            } else { None }).collect();
++        addresses.into_iter().filter(|addr| self.is_bonded(addr)).map(|addr| {
++            BluetoothAudioDevice::new(addr, self.adapter_get_remote_name(addr),
++                self.a2dp_caps.get(&addr).cloned().unwrap_or_default(),
++                *self.hfp_cap.get(&addr).unwrap_or(&HfpCodecFormat::NONE), self.absolute_volume)
++        }).collect()
++    }
++
++    fn get_a2dp_pcm_config(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> A2dpPcmConfig {
++        if !self.session_owner(token, owner.as_ref()) { return A2dpPcmConfig::default(); }
++        let session = self.audio_session.as_ref().unwrap();
++        if session.hfp || !session.started || session.stopping ||
++            self.a2dp_audio_state.get(&session.address) != Some(&BtavAudioState::Started) {
++            return A2dpPcmConfig::default();
++        }
++        self.a2dp.get_pcm_config_for_peer(session.address)
++    }
++
++    fn get_audio_session_position(&self, token: u64,
++        owner: Box<dyn IBluetoothMediaCallback + Send>) -> AudioSessionPosition {
++        if !self.session_owner(token, owner.as_ref()) { return AudioSessionPosition::default(); }
++        let session = self.audio_session.as_ref().unwrap();
++        if session.hfp || !session.started || session.stopping ||
++            self.a2dp_audio_state.get(&session.address) != Some(&BtavAudioState::Started) {
++            return AudioSessionPosition::default();
++        }
++        let snapshot = self.a2dp.get_position_for_peer(session.address);
++        let p = snapshot.position;
++        AudioSessionPosition { valid: snapshot.valid, total_bytes_read: p.total_bytes_read,
++            data_position_sec: p.data_position_sec, data_position_nsec: p.data_position_nsec as i64,
++            remote_delay_report_ns: p.remote_delay_report_ns }
++    }
++
++    fn start_audio_request(&mut self, connection_listener: File) -> bool {
++        if self.audio_session.is_some() || self.a2dp_audio_connection_listener.is_some() { return false; }
+         self.a2dp_audio_connection_listener = Some(connection_listener);
+-        self.start_audio_request_impl()
++        if !self.start_audio_request_impl() {
++            self.a2dp_audio_connection_listener = None;
++            return false;
++        }
++        true
+     }
+ 
+     fn stop_audio_request(&mut self, connection_listener: File) {
++        if self.audio_session.is_some() { return; }
+         debug!("Stop audio request");
+ 
+         if self.a2dp_audio_connection_listener.is_some() {
+@@ -3704,15 +3946,22 @@ impl IBluetoothMedia for BluetoothMedia {
+         disabled_codecs: HfpCodecBitId,
+         connection_listener: File,
+     ) -> bool {
++        if self.audio_session.is_some() { return false; }
+         if self.hfp_audio_connection_listener.is_some() {
+-            warn!("start_sco_call: replacing an unresolved listener");
++            warn!("start_sco_call: another SCO request is pending");
++            return false;
+         }
+ 
+         self.hfp_audio_connection_listener = Some(connection_listener);
+-        self.start_sco_call_impl(address, sco_offload, disabled_codecs)
++        if !self.start_sco_call_impl(address, sco_offload, disabled_codecs) {
++            self.hfp_audio_connection_listener = None;
++            return false;
++        }
++        true
+     }
+ 
+     fn stop_sco_call(&mut self, address: RawAddress, listener: File) {
++        if self.audio_session.is_some() { return; }
+         if self.hfp_audio_connection_listener.is_some() {
+             warn!("stop_sco_call: replacing an unresolved listener");
+         }
+@@ -3728,6 +3977,14 @@ impl IBluetoothMedia for BluetoothMedia {
+         }
+     }
+ 
++    fn get_hfp_pcm_config(&self, addr: RawAddress) -> HfpPcmConfig {
++        let mut config = self.hfp.get_pcm_config(addr);
++        config.ready &= self.hfp_audio_state.get(&addr) == Some(&BthfAudioState::Connected);
++        config.active = config.ready || self.audio_session.is_some() || self.hfp_audio_connection_listener.is_some()
++            || self.hfp_audio_state.values().any(|state| *state != BthfAudioState::Disconnected);
++        config
++    }
++
+     fn get_hfp_audio_final_codecs(&mut self, addr: RawAddress) -> u8 {
+         match self.hfp_audio_state.get(&addr) {
+             Some(BthfAudioState::Connected) => match self.hfp_cap.get(&addr) {
+diff --git a/system/gd/rust/linux/stack/src/callbacks.rs b/system/gd/rust/linux/stack/src/callbacks.rs
+index c70c69955e..e645eb4104 100644
+--- a/system/gd/rust/linux/stack/src/callbacks.rs
++++ b/system/gd/rust/linux/stack/src/callbacks.rs
+@@ -8,7 +8,7 @@ use crate::{Message, RPCProxy};
+ /// Utility for managing callbacks conveniently.
+ pub struct Callbacks<T: Send + ?Sized> {
+     callbacks: HashMap<u32, Box<T>>,
+-    object_id_to_cbid: HashMap<String, u32>,
++    object_id_to_cbid: HashMap<(String, String), u32>,
+     tx: Sender<Message>,
+     disconnected_message: fn(u32) -> Message,
+ }
+@@ -28,6 +28,12 @@ impl<T: RPCProxy + Send + ?Sized> Callbacks<T> {
+         }
+     }
+ 
++    // Remote object paths are scoped to a transport owner. Local proxies use
++    // an empty owner and preserve their existing object-ID namespace.
++    fn identity(callback: &T) -> (String, String) {
++        (callback.get_remote_owner(), callback.get_object_id())
++    }
++
+     /// Stores a new callback and monitors for callback disconnect. If the callback object id
+     /// already exists, return the callback ID previously added.
+     ///
+@@ -36,7 +42,7 @@ impl<T: RPCProxy + Send + ?Sized> Callbacks<T> {
+     ///
+     /// Returns the id of the callback.
+     pub fn add_callback(&mut self, mut callback: Box<T>) -> u32 {
+-        if let Some(cbid) = self.object_id_to_cbid.get(&callback.get_object_id()) {
++        if let Some(cbid) = self.object_id_to_cbid.get(&Self::identity(&*callback)) {
+             return *cbid;
+         }
+ 
+@@ -49,7 +55,7 @@ impl<T: RPCProxy + Send + ?Sized> Callbacks<T> {
+             });
+         }));
+ 
+-        self.object_id_to_cbid.insert(callback.get_object_id(), id);
++        self.object_id_to_cbid.insert(Self::identity(&*callback), id);
+         self.callbacks.insert(id, callback);
+         id
+     }
+@@ -66,7 +72,7 @@ impl<T: RPCProxy + Send + ?Sized> Callbacks<T> {
+                 // Stop watching for disconnect.
+                 callback.unregister(id);
+                 // Remove the proxy object.
+-                self.object_id_to_cbid.remove(&callback.get_object_id());
++                self.object_id_to_cbid.remove(&Self::identity(&**callback));
+                 self.callbacks.remove(&id);
+                 true
+             }
+@@ -100,11 +106,12 @@ mod tests {
+ 
+     struct TestCallback {
+         id: String,
++        owner: String,
+     }
+ 
+     impl TestCallback {
+         fn new(id: String) -> TestCallback {
+-            TestCallback { id }
++            TestCallback { id, owner: String::new() }
+         }
+     }
+ 
+@@ -112,6 +119,9 @@ mod tests {
+         fn get_object_id(&self) -> String {
+             self.id.clone()
+         }
++        fn get_remote_owner(&self) -> String {
++            self.owner.clone()
++        }
+         fn register_disconnect(&mut self, _f: Box<dyn Fn(u32) + Send>) -> u32 {
+             CBID.fetch_add(1, Ordering::SeqCst)
+         }
+@@ -152,4 +162,24 @@ mod tests {
+         let cbid2 = callbacks.add_callback(Box::new(TestCallback::new(cb_string.clone())));
+         assert_ne!(cbid, cbid2);
+     }
++    #[test]
++    fn same_path_is_scoped_to_owner() {
++        let (tx, _rx) = crate::Stack::create_channel();
++        let mut callbacks = Callbacks::new(tx, Message::AdapterCallbackDisconnected);
++        let callback = |owner: &str| Box::new(TestCallback {
++            id: "/same/path".into(), owner: owner.into(),
++        });
++        let first = callbacks.add_callback(callback(":1.10"));
++        let second = callbacks.add_callback(callback(":1.11"));
++        let local = callbacks.add_callback(callback(""));
++        assert_ne!(first, second);
++        assert_ne!(first, local);
++        assert_ne!(second, local);
++        assert_eq!(first, callbacks.add_callback(callback(":1.10")));
++        assert!(callbacks.remove_callback(first));
++        assert_eq!(second, callbacks.add_callback(callback(":1.11")));
++        assert_eq!(local, callbacks.add_callback(callback("")));
++        assert_ne!(first, callbacks.add_callback(callback(":1.10")));
++    }
++
+ }
+diff --git a/system/gd/rust/linux/stack/src/lib.rs b/system/gd/rust/linux/stack/src/lib.rs
+index d9f97bfa32..e954162787 100644
+--- a/system/gd/rust/linux/stack/src/lib.rs
++++ b/system/gd/rust/linux/stack/src/lib.rs
+@@ -624,6 +624,9 @@ pub trait RPCProxy {
+         String::from("")
+     }
+ 
++    /// Authenticated transport identity, supplied by the RPC projection.
++    fn get_remote_owner(&self) -> String { String::new() }
++
+     /// Unregisters callback with this id.
+     fn unregister(&mut self, _id: u32) -> bool {
+         false
+diff --git a/system/gd/rust/linux/stack/src/socket_manager.rs b/system/gd/rust/linux/stack/src/socket_manager.rs
+index 841bb51987..5bbc40b540 100644
+--- a/system/gd/rust/linux/stack/src/socket_manager.rs
++++ b/system/gd/rust/linux/stack/src/socket_manager.rs
+@@ -1236,6 +1236,13 @@ impl BluetoothSocketManager {
+         self.callbacks.remove_callback(callback);
+     }
+ 
++    /// Check the authenticated RPC owner of a callback before dispatching a
++    /// socket operation. Local proxies (empty owners) are never D-Bus owners.
++    pub fn is_callback_owner(&self, callback: CallbackId, owner: &str) -> bool {
++        !owner.is_empty() && self.callbacks.get_by_id(callback)
++            .map_or(false, |proxy| proxy.get_remote_owner() == owner)
++    }
++
+     // Send MSC command to the peer. ONLY FOR QUALIFICATION USE.
+     // libbluetooth auto starts the control request only when it is the client.
+     // This function allows the host to start the control request while as a server.
+@@ -1255,7 +1262,13 @@ impl IBluetoothSocketManager for BluetoothSocketManager {
+     }
+ 
+     fn unregister_callback(&mut self, callback: CallbackId) -> bool {
+-        self.callbacks.remove_callback(callback)
++        if self.callbacks.get_by_id(callback).is_none() {
++            return false;
++        }
++        // Release associated tasks immediately instead of waiting for the
++        // queued disconnect notification.
++        self.remove_callback(callback);
++        true
+     }
+ 
+     fn listen_using_insecure_l2cap_channel(&mut self, callback: CallbackId) -> SocketResult {
+diff --git a/system/gd/rust/linux/HFP_PCM_BRIDGE.md b/system/gd/rust/linux/HFP_PCM_BRIDGE.md
+new file mode 100644
+index 0000000000..6137a81713
+--- /dev/null
++++ b/system/gd/rust/linux/HFP_PCM_BRIDGE.md
+@@ -0,0 +1,193 @@
++# Linux HFP PCM bridge
++
++This fork exposes the existing Floss software SCO audio path to a desktop audio
++server. Floss already decodes microphone SCO packets to PCM and encodes playback
++PCM to SCO in `stack/btm/btm_sco.cc` and `btm_sco_hci.cc`. mSBC and LC3 processing
++remain in Floss. For CVSD, the controller performs the codec conversion and the
++host HCI path carries PCM. No Bluetooth codec is required in PipeWire.
++
++The existing Unix stream socket is full duplex:
++
++```
++/var/run/bluetooth/audio/.sco_data
++```
++
++Write speaker PCM to this socket; read microphone PCM from it. PCM is signed
++16-bit little-endian, mono, at 8000 Hz for CVSD, 16000 Hz for mSBC, or 32000 Hz
++for LC3. The initial desktop bridge supports CVSD and mSBC only. The existing
++Floss LC3 software path is reported accurately when used by another caller but
++is not enabled by the standard-HCI transport opt-in below.
++
++## Transport prerequisites
++
++The normal Linux integration retains its existing management operations
++`0x0100` (codec capabilities) and `0x0101` (SCO connection/codec notification).
++These operations are not assumed available on a stock distribution kernel.
++
++For a controller transport independently verified to carry SCO packets while
++Floss owns the controller through `HCI_CHANNEL_USER`, the **btadapterd service
++process** can explicitly opt into software HCI transport by setting:
++
++```
++FLOSS_HFP_SOFTWARE_HCI_TRANSPORT=true
++```
++
++It is read when the HFP HAL initializes, so restart the adapter daemon after
++changing it. The environment variable, when present, overrides the process-local
++`bluetooth.hfp.software_hci_transport.enabled` property. Only the exact string
++`true` enables it; the default is disabled. This option:
++
++- Avoids both custom management commands.
++- Disables SCO offload and enables CVSD when the controller advertises SCO.
++- Advertises transparent mSBC only when the controller advertises EV3 packets,
++  using Floss's existing 60-byte software packet framing.
++- Does not advertise LC3/SWB in this mode.
++
++Controller feature bits do **not** prove that a Linux transport works. In
++particular, a USB driver may require the management notification to select its
++isochronous interface while the controller is in user-channel mode. Bypassing
++the notification does not implement that driver work. UART and USB transports
++must be validated individually; this change does not establish ordinary USB
++adapter compatibility. Do not enable this option solely because a headset
++supports mSBC. No kernel/hardware validation has been performed.
++
++## D-Bus contract
++
++Use service `org.chromium.bluetooth`, object
++`/org/chromium/bluetooth/hciN/media`, interface
++`org.chromium.bluetooth.BluetoothMedia`.
++
++`GetHfpPcmConfig(address: s) -> a{sv}` returns:
++
++| Key | D-Bus type | Meaning |
++| --- | --- | --- |
++| `ready` | `b` | This address has a connected, software SCO PCM listener with a known format. |
++| `active` | `b` | Any owned audio reservation, SCO connection, connection/disconnection operation, or pending listener is active, regardless of the requested address. |
++| `sample_rate` | `u` | Actual live PCM rate; meaningful when ready. |
++| `bits_per_sample` | `y` | 16 when ready. |
++| `channels_count` | `y` | 1 when ready. |
++| `codec` | `u` | HFP bit ID: CVSD=1, mSBC=2, LC3=4. |
++| `socket_path` | `s` | The socket above when ready; otherwise empty for an unavailable native snapshot. |
++| `generation` | `t` | Process-local transport generation; changes on opening, cleanup or unexpected PCM closure/failure. |
++
++The native snapshot uses the **selected SCO connection's actual codec** and
++address, under a mutex. It is not inferred from advertised remote capabilities.
++Offloaded connections and different addresses do not produce a ready PCM
++snapshot. Readiness is additionally gated by the media service's connected
++audio state. A ready snapshot is an observation, not a lease.
++
++The media interface supplies two-phase, caller-owned audio sessions for both
++A2DP and HFP. The `owner` argument below is a BluetoothMediaCallback object path;
++the D-Bus projection captures its authenticated unique sender, not a bus name
++provided in the message body. Tokens never repeat within the daemon lifetime.
++
++| Method | Input signature | Reply | Meaning |
++| --- | --- | --- | --- |
++| `ReserveAudioSession` | `sbo` (address, HFP flag, owner) | `t` | Reserve without starting audio; zero refuses a busy/unready device. |
++| `StartAudioSession` | `toh` (token, owner, notification FD) | `b` | Start the reserved address; HFP selects software CVSD/mSBC. |
++| `StopAudioSession` | `to` (token, owner) | `b` | Cancel even before readiness; stale tokens are harmless no-ops. |
++| `GetAudioSessionPosition` | `to` (token, owner) | `a{sv}` | Owned A2DP byte/timestamp feedback; invalid for HFP or a replaced/inactive session. |
++
++The position dictionary contains `valid: b`, `total_bytes_read: t`,
++`data_position_sec: x`, `data_position_nsec: x`, and `remote_delay_report_ns: t`.
++The timestamp uses CLOCK_MONOTONIC_RAW. Byte count and timestamp are one locked
++snapshot; an admitted new stream resets them to zero. A rejected/duplicate
++start does not reset another stream. Native active-device identity and Started
++state are checked on the stack main thread before returning a valid snapshot.
++The A2DP feeding format still requires independent verification; these counters
++do not negotiate it.
++
++Recommended client sequence:
++
++1. Register media callbacks and authenticate the unique Floss owner. Require
++   the chosen headset's HFP service-level connection (or A2DP profile) to exist.
++2. Reserve and retain the returned nonzero token **before** starting transport.
++   An unstarted reservation expires after ten seconds. Losing the owner bus
++   connection cancels its reservation/session automatically.
++3. Start with the token, callback path and notification FD. Acceptance is not
++   completion: for HFP a nonzero byte is a codec wakeup, not authoritative PCM
++   configuration; for A2DP byte one reports Started. Zero means failure.
++4. For HFP, retry the getter and socket connection after notification within a
++   bounded deadline. Connected notification can precede listener creation.
++5. Confirm the same ready address-specific format and generation around socket
++   connection before publishing nodes or transferring PCM.
++6. Drain microphone PCM continuously and supply playback PCM. Incoming SCO
++   clocks native transmit. On failure, stop both graph nodes.
++7. Always cancel using the retained token on shutdown, timeout, or cancellation,
++   including before a ready generation is observed. Close the PCM socket and
++   bus connection. Never direct cleanup calls at a replacement daemon owner.
++
++Legacy active-device, codec-configuration, start/stop and media-cleanup calls
++cannot mutate a reserved session. Internal qualification/telephony start and
++stop paths obey the same exclusion; their original behavior remains available
++without an owned session. A stopping session retains exclusion until terminal
++native state, and late Connected/Started callbacks retry cancellation. A2DP
++cancellation before Started disconnects that address's profile because legacy
++native failed starts do not always issue a terminal AudioState callback.
++This may require reconnecting the headset after a cancelled A2DP start. Floss
++also emits terminal HFP failure when policy rejects an accepted open, or when
++codec negotiation is cancelled/fails before a controller connection exists.
++The negotiation timer is cancelled and stale replies outside the matching
++negotiation state are ignored.
++
++Native A2DP selection rejects a streaming source before changing the peer, and
++start/stop recheck the selected address on the stack main thread. Native task
++waits are bounded. If a queued start or stop has an indeterminate result, it is
++treated as accepted so cancellation retains ownership rather than freeing a
++potentially live request. Runtime validation of these races remains required.
++
++## Socket behavior and permissions
++
++The socket retains Floss's `0770` mode and `bluetooth-audio` group. Deployment
++must create the runtime directory and grant only the intended audio process
++access. D-Bus policy must permit Floss's callback method calls to that process.
++The bridge's cooperative lock, active-session ownership and service sandbox
++are deployment responsibilities; this getter grants no additional permissions.
++
++Failure to create the PCM listener immediately requests teardown of the exact
++connected SCO link, without waiting for receive traffic. Readiness publication
++checks the live listener while excluding the UIPC close callback. Microphone
++writes remain nonblocking and suppress SIGPIPE; short writes, write errors and
++unexpected read-side EOF/closure invalidate readiness and advance generation.
++They schedule exact-address/generation teardown on the owning stack thread.
++Expected cleanup invalidates state before joining UIPC, so its close callback
++cannot deadlock cleanup or tear down a newer transport incarnation.
++
++The existing bounded playback read and codec/packet-loss handling remain in
++Floss. This first integration deliberately terminates on PCM write backpressure
++instead of implementing another audio buffering/clock controller. Actual
++latency, loss recovery, kernel transport behavior and headset interoperability
++remain unverified on physical hardware. The original source-only repair pass
++did not run builds or tests; subsequent build and isolated mock-test evidence
++is tracked in the packaging repository’s BUILD-STATUS.md and RUNTIME-STATUS.md.
++
++## Automatic desktop discovery and A2DP format
++
++`GetConnectedAudioDevices() -> aa{sv}` returns the same `BluetoothAudioDevice`
++records supplied by `OnBluetoothAudioDeviceAdded`, restricted to bonded, fully
++connected media devices. Register callbacks before taking this snapshot so a
++client can reconcile both initial state and subsequent add/remove events.
++
++`GetA2dpPcmConfig(token: t, owner: o) -> a{sv}` requires the caller-owned live
++A2DP session established by `ReserveAudioSession` / `StartAudioSession`. Its
++fields are `ready: b`, `sample_rate: u`, `bits_per_sample: y`,
++`channels_count: y`, `generation: t`, and `socket_path: s`. The native snapshot
++is populated from the successfully initialized SBC/AAC encoder's actual PCM
++feeding parameters; codec capabilities and requested preferences are not a PCM
++format. `ready` is false for a wrong token/owner, stopped session, wrong native
++active peer, or an uninitialized encoder.
++
++Wait for a ready snapshot before opening the PCM endpoint. Monitor it during
++playback and rebuild the stream on a changed generation or format; generation
++increments on initialization, reconfiguration, and cleanup. It is scoped to a
++daemon instance and must not survive a D-Bus owner change. PipeWire resamples
++its graph audio into this format, so the user does not choose a feeder rate.
++A remote START that precedes reservation can be adopted only for the exact
++same peer when no competing lease exists.
++
++The Linux AAC source uses Floss's upstream MMC/FFmpeg encoder service. Its
++currently advertised AAC source format is 44.1 kHz, stereo, signed 16-bit PCM;
++48 kHz AAC source advertisement remains disabled by upstream. SBC remains the
++mandatory fallback. The codec service uses a private runtime directory,
++bounded worker slots, bounded abandoned reservations, and validates AAC frame
++sizes before transcoding. Desktop clients never call the codec service.
+diff --git a/system/gd/rust/linux/mgmt/src/rfkill.rs b/system/gd/rust/linux/mgmt/src/rfkill.rs
+new file mode 100644
+index 0000000000..a2d5e02d65
+--- /dev/null
++++ b/system/gd/rust/linux/mgmt/src/rfkill.rs
+@@ -0,0 +1,197 @@
++//! Per-controller Linux rfkill access. Never emits CHANGE_ALL or addresses a non-Bluetooth radio.
++use std::fs::{self, File};
++use std::io::{self, Read};
++use std::path::Path;
++
++const MAX_ENTRIES: usize = 256;
++const MAX_ATTRIBUTE_BYTES: u64 = 64;
++const RFKILL_TYPE_BLUETOOTH: u8 = 2;
++const RFKILL_OP_CHANGE: u8 = 2;
++
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub(crate) struct Switch {
++    index: u32,
++    pub hard_blocked: bool,
++    pub soft_blocked: bool,
++}
++
++fn attribute(path: &Path) -> Option<String> {
++    let mut value = String::new();
++    File::open(path).ok()?.take(MAX_ATTRIBUTE_BYTES + 1).read_to_string(&mut value).ok()?;
++    if value.len() > MAX_ATTRIBUTE_BYTES as usize {
++        return None;
++    }
++    Some(value.trim().to_owned())
++}
++
++fn boolean(path: &Path) -> Option<bool> {
++    match attribute(path)?.as_str() {
++        "0" => Some(false),
++        "1" => Some(true),
++        _ => None,
++    }
++}
++
++/// Only kernel hciN switches can be safely mapped to a specific adapter. A platform-wide switch
++/// with another name is deliberately not guessed from enumeration order or controller count.
++pub(crate) fn read(root: &Path, real_hci: i32) -> Option<Switch> {
++    if real_hci < 0 {
++        return None;
++    }
++    let name = format!("hci{}", real_hci);
++    let mut matched = None;
++    for (count, entry) in fs::read_dir(root).ok()?.enumerate() {
++        if count >= MAX_ENTRIES {
++            return None;
++        }
++        let entry = entry.ok()?;
++        let filename = entry.file_name();
++        let filename = filename.to_str()?;
++        let index: u32 = match filename.strip_prefix("rfkill").and_then(|s| s.parse().ok()) {
++            Some(index) if filename == format!("rfkill{}", index) => index,
++            _ => continue,
++        };
++        let path = entry.path();
++        if attribute(&path.join("type"))?.as_str() != "bluetooth" {
++            continue;
++        }
++        if attribute(&path.join("name"))? != name {
++            continue;
++        }
++        // Ambiguity, transient removal or malformed state must never produce a write target.
++        if matched.is_some() {
++            return None;
++        }
++        matched = Some(Switch {
++            index,
++            hard_blocked: boolean(&path.join("hard"))?,
++            soft_blocked: boolean(&path.join("soft"))?,
++        });
++    }
++    matched
++}
++
++/// Success means the kernel accepted the request, not that a concurrent hardware switch cannot
++/// change state afterward. Callers must refresh state. An unblock cannot override a hard block.
++pub(crate) fn set<F>(root: &Path, real_hci: i32, blocked: bool, mut write_event: F) -> bool
++where
++    F: FnMut(&[u8; 8]) -> io::Result<()>,
++{
++    let switch = match read(root, real_hci) {
++        Some(switch) => switch,
++        None => return false,
++    };
++    if !blocked && switch.hard_blocked {
++        return false;
++    }
++    if switch.soft_blocked == blocked {
++        return true;
++    }
++    // Linux UAPI struct rfkill_event is packed: native-endian u32 index, type/op/soft/hard u8.
++    let mut event = [0u8; 8];
++    event[..4].copy_from_slice(&switch.index.to_ne_bytes());
++    event[4] = RFKILL_TYPE_BLUETOOTH;
++    event[5] = RFKILL_OP_CHANGE;
++    event[6] = u8::from(blocked);
++    write_event(&event).is_ok()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::path::PathBuf;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++
++    struct Fixture(PathBuf);
++    impl Fixture {
++        fn new() -> Self {
++            static SERIAL: AtomicUsize = AtomicUsize::new(0);
++            let path = std::env::temp_dir().join(format!(
++                "floss-rfkill-test-{}-{}",
++                std::process::id(),
++                SERIAL.fetch_add(1, Ordering::Relaxed)
++            ));
++            fs::create_dir(&path).unwrap();
++            Self(path)
++        }
++        fn radio(&self, index: u32, kind: &str, name: &str, hard: &str, soft: &str) {
++            let path = self.0.join(format!("rfkill{}", index));
++            fs::create_dir(&path).unwrap();
++            for (key, value) in [("type", kind), ("name", name), ("hard", hard), ("soft", soft)] {
++                fs::write(path.join(key), value).unwrap();
++            }
++        }
++    }
++    impl Drop for Fixture {
++        fn drop(&mut self) {
++            let _ = fs::remove_dir_all(&self.0);
++        }
++    }
++
++    #[test]
++    fn targets_exact_controller_and_never_wifi_or_change_all() {
++        let fixture = Fixture::new();
++        fixture.radio(1, "wlan", "hci0", "0", "0");
++        fixture.radio(7, "bluetooth", "hci1", "0", "0");
++        fixture.radio(19, "bluetooth", "hci0", "0", "0");
++        let mut events = Vec::new();
++        assert!(set(&fixture.0, 0, true, |event| {
++            events.push(*event);
++            Ok(())
++        }));
++        let mut expected = [0, 0, 0, 0, 2, 2, 1, 0];
++        expected[..4].copy_from_slice(&19u32.to_ne_bytes());
++        assert_eq!(events, vec![expected]);
++    }
++
++    #[test]
++    fn unavailable_negative_ambiguous_and_platform_mapping_fail_closed() {
++        let fixture = Fixture::new();
++        fixture.radio(2, "bluetooth", "platform-bluetooth", "0", "1");
++        assert_eq!(read(&fixture.0, -1), None);
++        assert_eq!(read(&fixture.0, 0), None);
++        fixture.radio(3, "bluetooth", "hci0", "0", "0");
++        fixture.radio(4, "bluetooth", "hci0", "0", "0");
++        assert!(!set(&fixture.0, 0, true, |_| panic!("ambiguous write")));
++    }
++
++    #[test]
++    fn hard_block_cannot_be_cleared_and_noop_does_not_write() {
++        let fixture = Fixture::new();
++        fixture.radio(2, "bluetooth", "hci0", "1", "1");
++        assert!(!set(&fixture.0, 0, false, |_| panic!("hard unblock")));
++        assert!(set(&fixture.0, 0, true, |_| panic!("unneeded write")));
++        assert_eq!(read(&fixture.0, 0).unwrap().hard_blocked, true);
++    }
++
++    #[test]
++    fn malformed_and_oversized_attributes_fail_closed() {
++        let fixture = Fixture::new();
++        fixture.radio(2, "bluetooth", "hci0", "2", "0");
++        assert!(!set(&fixture.0, 0, true, |_| panic!("malformed write")));
++        fs::write(fixture.0.join("rfkill2/hard"), "0".repeat(65)).unwrap();
++        assert_eq!(read(&fixture.0, 0), None);
++    }
++
++    #[test]
++    fn write_failure_is_reported_and_unblock_event_is_scoped() {
++        let fixture = Fixture::new();
++        fixture.radio(9, "bluetooth", "hci3", "0", "1");
++        assert!(!set(&fixture.0, 3, false, |_| Err(io::ErrorKind::PermissionDenied.into())));
++        assert!(set(&fixture.0, 3, false, |event| {
++            assert_eq!(&event[4..], &[2, 2, 0, 0]);
++            assert_eq!(&event[..4], &9u32.to_ne_bytes());
++            Ok(())
++        }));
++    }
++
++    #[test]
++    fn enumeration_is_bounded() {
++        let fixture = Fixture::new();
++        fixture.radio(0, "bluetooth", "hci0", "0", "0");
++        for index in 1..=MAX_ENTRIES {
++            fs::create_dir(fixture.0.join(format!("entry{}", index))).unwrap();
++        }
++        assert!(!set(&fixture.0, 0, true, |_| panic!("unbounded directory write")));
++    }
++}

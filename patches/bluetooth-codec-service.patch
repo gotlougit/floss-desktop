@@ -1,0 +1,191 @@
+diff --git a/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc b/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc
+index 24ac4edb51..3c78107e50 100644
+--- a/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc
++++ b/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc
+@@ -25,6 +25,8 @@ extern "C" {
+ }
+ 
+ #include <bluetooth/log.h>
++#include <cmath>
++#include <cstring>
+ 
+ #include "a2dp_aac.h"
+ #include "mmc/proto/mmc_config.pb.h"
+@@ -76,6 +78,15 @@ int A2dpAacEncoder::init(ConfigParam config) {
+   const int sample_rate = param_.sample_rate();
+   const int bit_rate = param_.bit_rate();
+ 
++  // This Linux source advertises stereo AAC. The LATM header and silence
++  // fallback below describe stereo, so reject incompatible direct requests.
++  if (channel_count != 2 || (param_.bit_depth() != 16 && param_.bit_depth() != 24 &&
++      param_.bit_depth() != 32) || bit_rate <= 0 || bit_rate > 512000 ||
++      param_.effective_frame_size() < A2DP_AAC_MAX_PREFIX_SIZE + 16 ||
++      param_.effective_frame_size() > 32768) {
++    return -EINVAL;
++  }
++
+   if (channel_count == 1) {
+     AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
+     av_channel_layout_copy(&avctx_->ch_layout, &mono);
+@@ -115,6 +126,11 @@ void A2dpAacEncoder::cleanup() {
+ 
+ int A2dpAacEncoder::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len) {
+   int rc;
++  if (!avctx_ || !i_buf || !o_buf || i_len != avctx_->frame_size *
++      param_.channel_count() * (param_.bit_depth() / 8) ||
++      o_len < param_.effective_frame_size()) {
++    return -EINVAL;
++  }
+ 
+   AVFrame* frame = av_frame_alloc();
+   if (!frame) {
+@@ -149,7 +165,7 @@ int A2dpAacEncoder::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_l
+ 
+   const int bit_depth = param_.bit_depth();
+   const int bytes_per_sample = bit_depth / 8;
+-  const float scaling_factor = (float)1 / (1 << (bit_depth - 1));
++  const float scaling_factor = std::ldexp(1.0f, 1 - bit_depth);
+ 
+   uint8_t* buff = i_buf;
+   float* data[] = {(float*)frame->data[0], (float*)frame->data[1]};
+@@ -158,15 +174,18 @@ int A2dpAacEncoder::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_l
+     int pcm = 0;
+ 
+     switch (nbits) {
+-      case 16:
+-        pcm = *((int16_t*)buff);
++      case 16: {
++        int16_t sample;
++        std::memcpy(&sample, buff, sizeof(sample));
++        pcm = sample;
+         break;
++      }
+       case 24:
+         pcm = *buff | *(buff + 1) << 8 | *(buff + 2) << 16;
+         pcm |= pcm & 0x00800000 ? 0xff000000 : 0;
+         break;
+       case 32:
+-        pcm = *((int32_t*)buff);
++        std::memcpy(&pcm, buff, sizeof(pcm));
+         break;
+       default:
+         log::fatal("Attempting to read {} bits as bit depth", nbits);
+@@ -183,6 +202,7 @@ int A2dpAacEncoder::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_l
+   AVPacket* pkt = av_packet_alloc();
+   if (!pkt) {
+     log::error("Could not alloc packet");
++    av_frame_free(&frame);
+     return -ENOMEM;
+   }
+ 
+diff --git a/system/stack/mmc/daemon/service.cc b/system/stack/mmc/daemon/service.cc
+index 0ac49a5746..43096dde45 100644
+--- a/system/stack/mmc/daemon/service.cc
++++ b/system/stack/mmc/daemon/service.cc
+@@ -51,14 +51,18 @@ using namespace bluetooth;
+ // Task that would run on the thread.
+ void StartSocketListener(int fd, struct sockaddr_un addr, std::promise<void> task_ended,
+                          std::unique_ptr<MmcInterface> codec_server) {
+-  socklen_t addr_size = sizeof(struct sockaddr_un);
+-  int client_fd = accept(fd, (struct sockaddr*)&addr, &addr_size);
++  // Bound abandoned CodecInit reservations; no client can pin a worker forever
++  // without connecting. Completed workers are reaped on the next RPC.
++  struct pollfd listener = {fd, POLLIN, 0};
++  int ready = poll(&listener, 1, 10000);
++  int client_fd = ready > 0 ? accept4(fd, nullptr, nullptr, SOCK_CLOEXEC) : -1;
+   // |fd| is only used for accept.
+   close(fd);
+ 
+   if (client_fd < 0) {
+     log::error("Failed to accept: {}", strerror(errno));
+-    codec_server.release();
++    unlink(addr.sun_path);
++    codec_server.reset();
+     task_ended.set_value();
+     return;
+   }
+@@ -107,7 +111,7 @@ void StartSocketListener(int fd, struct sockaddr_un addr, std::promise<void> tas
+   }
+   close(client_fd);
+   unlink(addr.sun_path);
+-  codec_server.release();
++  codec_server.reset();
+   task_ended.set_value();
+   return;
+ }
+@@ -164,6 +168,13 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+ 
+   dbus::MessageWriter writer(dbus_response.get());
+ 
++  RemoveIdleThread();
++  if (thread_pool_.size() >= kClientMaximum) {
++    std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
++        method_call, kMmcServiceError, "All codec workers are busy"));
++    return;
++  }
++
+   CodecInitRequest request;
+   CodecInitResponse response;
+ 
+@@ -211,7 +222,7 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+           std::string(kMmcSocketName) + base::UnguessableToken::Create().ToString();
+   response.set_socket_token(socket_path);
+ 
+-  int skt_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
++  int skt_fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+   if (skt_fd < 0) {
+     std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
+             method_call, kMmcServiceError,
+@@ -225,6 +236,10 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+   unlink(addr.sun_path);
+ 
+   if (bind(skt_fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un)) == -1) {
++    const int saved_errno = errno;
++    close(skt_fd);
++    unlink(addr.sun_path);
++    errno = saved_errno;
+     std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
+             method_call, kMmcServiceError, "Bind socket failed: " + std::string(strerror(errno))));
+     return;
+@@ -233,12 +248,20 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+   // mmc_service group can read/write the socket.
+   int rc = chmod(addr.sun_path, 0770);
+   if (rc < 0) {
++    const int saved_errno = errno;
++    close(skt_fd);
++    unlink(addr.sun_path);
++    errno = saved_errno;
+     std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
+             method_call, kMmcServiceError, "Chmod socket failed: " + std::string(strerror(errno))));
+     return;
+   }
+ 
+   if (listen(skt_fd, kClientMaximum) == -1) {
++    const int saved_errno = errno;
++    close(skt_fd);
++    unlink(addr.sun_path);
++    errno = saved_errno;
+     std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
+             method_call, kMmcServiceError,
+             "Listen socket failed: " + std::string(strerror(errno))));
+@@ -277,6 +300,9 @@ bool Service::StartWorkerThread(int fd, struct sockaddr_un addr,
+   thread_pool_.back().first->StartUp();
+   if (!thread_pool_.back().first->IsRunning()) {
+     log::error("Failed to start thread");
++    close(fd);
++    unlink(addr.sun_path);
++    thread_pool_.pop_back();
+     return false;
+   }
+ 
+@@ -290,6 +316,10 @@ bool Service::StartWorkerThread(int fd, struct sockaddr_un addr,
+                                                             std::move(addr), std::move(task_ended),
+                                                             std::move(codec_server)))) {
+     log::error("Failed to run task");
++    close(fd);
++    unlink(addr.sun_path);
++    thread_pool_.back().first->ShutDown();
++    thread_pool_.pop_back();
+     return false;
+   }
+ 

@@ -1,0 +1,3666 @@
+diff --git a/docs/rst/daemon/configuration.rst b/docs/rst/daemon/configuration.rst
+index fb94168..186adcd 100644
+--- a/docs/rst/daemon/configuration.rst
++++ b/docs/rst/daemon/configuration.rst
+@@ -28,6 +28,7 @@ the various options available.
+    configuration/alsa.rst
+    configuration/stream.rst
+    configuration/bluetooth.rst
++   configuration/floss.rst
+    configuration/video.rst
+    configuration/access.rst
+    configuration/example_fragments.rst
+diff --git a/docs/rst/daemon/configuration/alsa.rst b/docs/rst/daemon/configuration/alsa.rst
+index b0dd9da..9b9a8bc 100644
+--- a/docs/rst/daemon/configuration/alsa.rst
++++ b/docs/rst/daemon/configuration/alsa.rst
+@@ -482,9 +482,8 @@ described above.
+ 
+ .. note::
+ 
+-   This section applies to all devices, not only ALSA ones. For Bluetooth
+-   devices, the ``bluetooth.profile-preference`` setting provides a simpler way
+-   of expressing a quality-versus-latency preference; see
+-   :ref:`config_settings` and :ref:`config_bluetooth`.
++   This section applies to devices with enumerated PipeWire profiles. The
++   external Floss PCM bridge does not expose such a Device: its Bluetooth
++   profile and codec configuration belong to Floss. See :ref:`config_floss`.
+ 
+ .. _pipewire-props(7): https://docs.pipewire.org/page_man_pipewire-props_7.html
+diff --git a/docs/rst/daemon/configuration/bluetooth.rst b/docs/rst/daemon/configuration/bluetooth.rst
+index 5acb223..7763c86 100644
+--- a/docs/rst/daemon/configuration/bluetooth.rst
++++ b/docs/rst/daemon/configuration/bluetooth.rst
+@@ -3,356 +3,7 @@
+ Bluetooth configuration
+ =======================
+ 
+-Bluetooth audio and MIDI devices are managed by the BlueZ and BlueZ-MIDI
+-monitors, respectively.
+-
+-Both monitors are enabled by default and can be disabled using the
+-``monitor.bluez`` and ``monitor.bluez-midi`` :ref:`features <config_features>`
+-in the configuration file.
+-
+-As with all device monitors, both of these monitors are implemented as SPA
+-plugins and are part of PipeWire. WirePlumber merely loads the plugins and lets
+-them do their work. These plugins then monitor the BlueZ system-wide D-Bus
+-service and create device and node objects for all the connected Bluetooth audio
+-and MIDI devices.
+-
+-Logind integration
+-------------------
+-
+-The BlueZ monitors are integrated with logind to ensure that only one user at a
+-time can use the Bluetooth audio devices. This is because on most Linux desktop
+-systems, the graphical login manager (GDM, SDDM, etc.) is running as a separate
+-user and runs its own instance of PipeWire and WirePlumber. This means that if a
+-user logs in graphically, the Bluetooth audio devices will be automatically
+-grabbed by the PipeWire/WirePlumber instance of the graphical login manager,
+-and the user that logs in will not get access to them.
+-
+-To overcome this, the BlueZ monitors are integrated with logind and are only
+-allowed to create device and node objects for Bluetooth audio devices if the
+-user is currently on the "active" logind session.
+-
+-In some cases, however, this behavior is not desired. For example, if you
+-manually switch to a TTY and log in there, you may want to keep the Bluetooth
+-audio devices connected to the now inactive graphical session. Or you may want
+-to have a dedicated user that is always allowed to use the Bluetooth audio
+-devices, regardless of the active logind session, for example for a (possibly
+-headless) music player daemon.
+-
+-To disable this behavior, you can set the ``monitor.bluez.seat-monitoring``
+-:ref:`feature <config_features>` to ``disabled``.
+-
+-Example configuration :ref:`fragment <config_conf_file_fragments>` file:
+-
+-.. code-block::
+-
+-   wireplumber.profiles = {
+-     main = {
+-       monitor.bluez.seat-monitoring = disabled
+-     }
+-   }
+-
+-.. note::
+-
+-   If logind is not installed on the system, this functionality is disabled
+-   automatically.
+-
+-Monitor Properties
+-------------------
+-
+-The BlueZ monitor SPA plugin (``api.bluez5.enum.dbus``) supports properties that
+-can be used to configure it when it is loaded. These properties can be set in
+-the ``monitor.bluez.properties`` section of the WirePlumber configuration file.
+-
+-Example:
+-
+-.. code-block::
+-
+-  monitor.bluez.properties = {
+-    bluez5.roles = [ a2dp_sink a2dp_source bap_sink bap_source hsp_hs hsp_ag hfp_hf hfp_ag ]
+-    bluez5.codecs = [ sbc sbc_xq aac ]
+-    bluez5.enable-sbc-xq = true
+-    bluez5.hfphsp-backend = "native"
+-  }
+-
+-These properties are implemented by the BlueZ SPA plugin, which is part of
+-PipeWire. Their complete reference is the ``pipewire-props(7)`` man page,
+-which is also available online at
+-https://docs.pipewire.org/page_man_pipewire-props_7.html - see the
+-"BLUETOOTH PROPERTIES / Monitor properties" section there. The list below is
+-**a selection only**, covering the properties that are most commonly changed.
+-
+-.. describe:: bluez5.roles
+-
+-   Enabled roles.
+-
+-   Currently some headsets (e.g. Sony WH-1000XM3) do not work with both
+-   ``hsp_ag`` and ``hfp_ag`` enabled, so by default we enable only HFP.
+-
+-   Supported roles:
+-
+-   - ``hsp_hs`` (HSP Headset)
+-   - ``hsp_ag`` (HSP Audio Gateway),
+-   - ``hfp_hf`` (HFP Hands-Free),
+-   - ``hfp_ag`` (HFP Audio Gateway)
+-   - ``a2dp_sink`` (A2DP Audio Sink)
+-   - ``a2dp_source`` (A2DP Audio Source)
+-   - ``bap_sink`` (LE Audio Basic Audio Profile Sink)
+-   - ``bap_source`` (LE Audio Basic Audio Profile Source)
+-
+-   :Default value: ``[ a2dp_sink a2dp_source bap_sink bap_source hfp_hf hfp_ag ]``
+-   :Type: array of strings
+-
+-.. describe:: bluez5.codecs
+-
+-   Enabled A2DP codecs.
+-
+-   Supported codecs: ``sbc``, ``sbc_xq``, ``aac``, ``ldac``, ``aptx``,
+-   ``aptx_hd``, ``aptx_ll``, ``aptx_ll_duplex``, ``faststream``,
+-   ``faststream_duplex``, ``lc3plus_h3``, ``opus_05``, ``opus_05_51``,
+-   ``opus_05_71``, ``opus_05_duplex``, ``opus_05_pro``, ``lc3``.
+-
+-   :Default value: all available codecs
+-   :Type: array of strings
+-
+-.. describe:: bluez5.enable-msbc
+-              bluez5.enable-sbc-xq
+-              bluez5.enable-hw-volume
+-
+-   Enable, respectively, the mSBC codec (wideband speech codec for HFP/HSP),
+-   the SBC-XQ codec (high quality SBC codec for A2DP) and hardware volume
+-   controls.
+-
+-   None of these work on all headsets, so they are enabled based on the
+-   hardware quirks database. By explicitly setting these options you can force
+-   them to be enabled or disabled regardless.
+-
+-   :Default value: ``true``
+-   :Type: boolean
+-
+-.. describe:: bluez5.hfphsp-backend
+-
+-   HFP/HSP backend.
+-
+-   Available values: ``any``, ``none``, ``hsphfpd``, ``ofono`` or ``native``.
+-
+-   :Default value: ``native``
+-   :Type: string
+-
+-.. describe:: bluez5.hfphsp-backend-native-modem
+-
+-   Modem to use for native HFP/HSP backend ModemManager support. When enabled,
+-   PipeWire will forward HFP commands to the specified ModemManager device.
+-   This corresponds to the 'Device' property of the
+-   ``org.freedesktop.ModemManager1.Modem`` interface. May also be ``any`` to
+-   use any available modem device.
+-
+-   :Default value: ``none``
+-   :Type: string
+-
+-MIDI Monitor Properties
+------------------------
+-
+-The BlueZ MIDI monitor SPA plugin (``api.bluez5.midi.enum``) may, in the future,
+-support properties that can be used to configure it when it is loaded. These
+-properties can be set in the ``monitor.bluez-midi.properties`` section of the
+-WirePlumber configuration file. At the moment of writing, there are no
+-properties that can be set there.
+-
+-In addition, the BlueZ MIDI monitor supports a list of MIDI server node names
+-that can be used to create Bluetooth LE MIDI service instances. These
+-server node names can be set in the ``monitor.bluez-midi.servers`` section of
+-the WirePlumber configuration file.
+-
+-Example:
+-
+-.. code-block::
+-
+-   monitor.bluez-midi.servers = [ "bluez_midi.server" ]
+-
+-.. note::
+-
+-   Typical BLE MIDI instruments have one service instance, so adding more than
+-   one here may confuse some clients.
+-
+-Rules
+------
+-
+-When device and node objects are created by the BlueZ monitor, they can be
+-configured using rules. These rules allow matching the existing properties of
+-these objects and updating them with new values. This is the main way of
+-configuring Bluetooth device settings.
+-
+-These rules can be set in the ``monitor.bluez.rules`` section of the WirePlumber
+-configuration file.
+-
+-Example:
+-
+-.. code-block::
+-
+-   monitor.bluez.rules = [
+-     {
+-       matches = [
+-         {
+-           ## This matches all bluetooth devices.
+-           device.name = "~bluez_card.*"
+-         }
+-       ]
+-       actions = {
+-         update-props = {
+-           bluez5.auto-connect = [ hfp_hf hsp_hs a2dp_sink hfp_ag hsp_ag a2dp_source ]
+-           bluez5.hw-volume = [ hfp_hf hsp_hs a2dp_sink hfp_ag hsp_ag a2dp_source ]
+-           bluez5.a2dp.ldac.quality = "auto"
+-         }
+-       }
+-     }
+-     {
+-       matches = [
+-         {
+-           ## Matches all sources.
+-           node.name = "~bluez_input.*"
+-         }
+-         {
+-           ## Matches all sinks.
+-           node.name = "~bluez_output.*"
+-         }
+-       ]
+-       actions = {
+-         update-props = {
+-           bluez5.media-source-role = "input"
+-
+-           ## Common node & audio adapter properties may also be set here
+-           node.description       = "My Node"
+-           priority.session       = 100
+-           session.suspend-timeout-seconds = 5
+-         }
+-       }
+-     }
+-   ]
+-
+-Where the properties are documented
+-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+-
+-The names that appear inside ``update-props`` are PipeWire object properties.
+-They are not defined by WirePlumber: the ``bluez5.*`` ones are implemented by
+-the BlueZ SPA plugin, and the rest are common node properties or properties of
+-the audio adapter that PipeWire attaches to every audio node - the very same
+-``priority.*``, ``session.*``, ``resample.*`` and ``channelmix.*`` properties
+-that apply to ALSA nodes and to application streams. All of them are
+-documented in `pipewire-props(7)`_.
+-
+-The sections below are **a selection only**, covering the properties that are
+-most commonly changed on Bluetooth devices. For anything that is not listed
+-here, refer to that man page.
+-
+-Device properties
+-^^^^^^^^^^^^^^^^^
+-
+-.. describe:: bluez5.auto-connect
+-
+-   Auto-connect device profiles on start up or when only partial profiles have
+-   connected. Disabled by default if the property is not specified.
+-
+-   Supported values are: ``hfp_hf``, ``hsp_hs``, ``a2dp_sink``, ``hfp_ag``,
+-   ``hsp_ag`` and ``a2dp_source``.
+-
+-   :Default value: ``[]``
+-   :Type: array of strings
+-
+-.. describe:: bluez5.hw-volume
+-
+-   Enable hardware volume controls on these profiles.
+-
+-   Supported values are: ``hfp_hf``, ``hsp_hs``, ``a2dp_sink``, ``hfp_ag``,
+-   ``hsp_ag`` and ``a2dp_source``.
+-
+-   :Default value: ``[ hfp_ag hsp_ag a2dp_source ]``
+-   :Type: array of strings
+-
+-.. describe:: bluez5.a2dp.ldac.quality
+-
+-   LDAC encoding quality.
+-
+-   Available values: ``auto`` (Adaptive Bitrate, default), ``hq`` (High
+-   Quality, 990/909kbps), ``sq`` (Standard Quality, 660/606kbps) and ``mq``
+-   (Mobile use Quality, 330/303kbps).
+-
+-   :Default value: ``auto``
+-   :Type: string
+-
+-.. note::
+-
+-   The initially activated profile of a Bluetooth device cannot be set with a
+-   property: WirePlumber forces it to "off" on creation and then applies its
+-   own profile policy. See the ``bluetooth.profile-preference`` setting in
+-   :ref:`config_settings` and the profile priority rules in
+-   :ref:`config_profile_priority_rules`.
+-
+-Node properties
+-^^^^^^^^^^^^^^^
+-
+-.. describe:: bluez5.media-source-role
+-
+-   Media source role, ``input`` or ``playback``. This controls how a media
+-   source device, such as a smartphone, is used by the system. Defaults to
+-   ``playback``, playing the incoming stream out to speakers. Set to ``input``
+-   to use the smartphone as an input for apps (like a microphone).
+-
+-   :Default value: ``playback``
+-   :Type: string
+-
+-MIDI Rules
+-----------
+-
+-Similarly to the above rules, the BlueZ MIDI monitor also supports rules that
+-can be used to configure MIDI nodes when they are created.
+-
+-These rules can be set in the ``monitor.bluez-midi.rules`` section of the
+-WirePlumber configuration file.
+-
+-Example:
+-
+-.. code-block::
+-
+-   monitor.bluez-midi.rules = [
+-     {
+-       matches = [
+-         {
+-           node.name = "~bluez_midi.*"
+-         }
+-       ]
+-       actions = {
+-         update-props = {
+-           node.nick = "My Node"
+-           priority.driver = 100
+-           priority.session = 100
+-           node.pause-on-idle = false
+-           session.suspend-timeout-seconds = 5
+-           node.latency-offset-msec = 0
+-         }
+-       }
+-     }
+-   ]
+-
+-.. note::
+-
+-   It is possible to also match MIDI server nodes by testing the ``node.name``
+-   property against the server node names that were set in the
+-   ``monitor.bluez-midi.servers`` section of the WirePlumber configuration file.
+-
+-MIDI-specific properties
+-^^^^^^^^^^^^^^^^^^^^^^^^
+-
+-.. describe:: node.latency-offset-msec
+-
+-   Latency adjustment to apply on the node. Larger values add a
+-   constant latency, but reduces timing jitter caused by Bluetooth
+-   transport.
+-
+-   :Default value: ``0``
+-   :Type: integer (milliseconds)
+-
+-The common node properties that may also be set here (``node.description``,
+-``priority.*``, ``session.suspend-timeout-seconds``, ...) are documented in
+-`pipewire-props(7)`_.
+-
+-.. _pipewire-props(7): https://docs.pipewire.org/page_man_pipewire-props_7.html
++This fork uses Floss and the external ``pw-floss`` PCM bridge for Bluetooth
++audio. The BlueZ monitors, codec settings, profile switching and MIDI support
++have been removed. See :ref:`config_floss` for the current implementation,
++configuration and remaining integration work.
+diff --git a/docs/rst/daemon/configuration/components_and_profiles.rst b/docs/rst/daemon/configuration/components_and_profiles.rst
+index 79d452d..3bf6e37 100644
+--- a/docs/rst/daemon/configuration/components_and_profiles.rst
++++ b/docs/rst/daemon/configuration/components_and_profiles.rst
+@@ -194,9 +194,9 @@ option (see :ref:`wireplumber(1) <man_wireplumber>`) or permanently through
+ 
+ .. describe:: main
+ 
+-   The default profile. Brings up audio, Bluetooth and video capture hardware
++   The default profile. Brings up audio and video capture hardware
+    together with the standard policy, and enables the settings and dynamic
+-   objects metadata.
++   objects metadata. External Floss bridge sinks use its normal audio policy.
+ 
+ .. describe:: main-systemwide
+ 
+@@ -218,7 +218,7 @@ option (see :ref:`wireplumber(1) <man_wireplumber>`) or permanently through
+ 
+ .. describe:: video-only
+ 
+-   The same as ``main``, but with audio and Bluetooth hardware disabled.
++   The same as ``main``, but with audio hardware monitoring disabled.
+    Useful for camera and screen sharing use cases where no audio management is
+    wanted.
+ 
+@@ -233,10 +233,6 @@ each handling one part of the job. See :ref:`daemon_multi_instance`.
+ 
+    Audio hardware monitors only.
+ 
+-.. describe:: bluetooth
+-
+-   Bluetooth hardware monitors only.
+-
+ .. describe:: video-capture
+ 
+    Video capture hardware monitors only.
+diff --git a/docs/rst/daemon/configuration/example_fragments.rst b/docs/rst/daemon/configuration/example_fragments.rst
+index f753e00..b9e9a2e 100644
+--- a/docs/rst/daemon/configuration/example_fragments.rst
++++ b/docs/rst/daemon/configuration/example_fragments.rst
+@@ -44,13 +44,12 @@ File                        Contains
+ ``alsa.conf``               ALSA monitor properties and rules, ALSA MIDI
+                             properties, and the ALSA-related settings.
+                             See :ref:`config_alsa`.
+-``bluetooth.conf``          BlueZ monitor properties and rules, BlueZ MIDI
+-                            properties, servers and rules, and the Bluetooth
+-                            settings. See :ref:`config_bluetooth`.
+ ``device.conf``             Device-related settings: profile and route
+                             restoring, default volumes, auto-mute.
+ ``filter-graph.conf``       ``node.filter-graph.rules``, for attaching an
+                             internal filter graph to a node.
++``floss.conf``              Auto-mute policy for external Floss PCM bridge
++                            sinks. See :ref:`config_floss`.
+ ``libcamera.conf``          libcamera monitor properties and rules.
+                             See :ref:`config_video`.
+ ``linking.conf``            Linking policy settings.
+diff --git a/docs/rst/daemon/configuration/features.rst b/docs/rst/daemon/configuration/features.rst
+index d06b07c..926b021 100644
+--- a/docs/rst/daemon/configuration/features.rst
++++ b/docs/rst/daemon/configuration/features.rst
+@@ -50,35 +50,12 @@ Audio
+ 
+    See :ref:`policies_software_dsp` for more information.
+ 
+-Bluetooth
+-~~~~~~~~~
++Floss audio
++~~~~~~~~~~~
+ 
+-.. describe:: hardware.bluetooth
+-
+-   Enables bringing up bluetooth hardware.
+-
+-   :wants: ``monitor.bluez``, ``monitor.bluez-midi``
+-
+-.. describe:: monitor.bluez
+-
+-   Enables the BlueZ device monitor.
+-
+-   :wants: ``monitor.bluez.seat-monitoring``
+-
+-.. describe:: monitor.bluez.seat-monitoring
+-
+-   Enables seat monitoring on the bluetooth monitor.
+-
+-   When enabled, this will make sure that the bluetooth devices are only
+-   enabled on the active seat.
+-
+-   :requires: ``support.logind``
+-
+-.. describe:: monitor.bluez-midi
+-
+-   Enables the BlueZ MIDI device monitor.
+-
+-   :wants: ``monitor.bluez.seat-monitoring``
++The external Floss PCM bridge publishes ordinary audio sink nodes handled by
++standard policy. There is no Bluetooth monitor feature in this fork.
++See :ref:`config_floss` for the bridge contract and lifecycle limitations.
+ 
+ Video
+ ~~~~~
+diff --git a/docs/rst/daemon/configuration/meson.build b/docs/rst/daemon/configuration/meson.build
+index 837e5af..0e240c7 100644
+--- a/docs/rst/daemon/configuration/meson.build
++++ b/docs/rst/daemon/configuration/meson.build
+@@ -10,6 +10,7 @@ sphinx_files += files(
+   'alsa.rst',
+   'stream.rst',
+   'bluetooth.rst',
++  'floss.rst',
+   'video.rst',
+   'access.rst',
+   'example_fragments.rst',
+diff --git a/docs/rst/daemon/configuration/migration.rst b/docs/rst/daemon/configuration/migration.rst
+index 8f7b7e9..316205d 100644
+--- a/docs/rst/daemon/configuration/migration.rst
++++ b/docs/rst/daemon/configuration/migration.rst
+@@ -127,66 +127,19 @@ this:
+      }
+    ]
+ 
+-Another example of Bluetooth node rules:
+-
+-.. code-block:: lua
+-   :caption: ~/.config/wireplumber/bluetooth.lua.d/51-headphones.lua
+-
+-    local rule = {
+-      matches = {
+-        {
+-          { "node.name", "equals", "bluez_output.02_11_45_A0_B3_27.a2dp-sink" },
+-        },
+-      },
+-      apply_properties = {
+-        ["node.nick"] = "Headphones",
+-      },
+-    }
+-
+-    table.insert(bluez_monitor.rules, rule)
+-
+-This equivalent of this script in the new configuration format would look like:
+-
+-.. code-block::
+-   :caption: ~/.config/wireplumber/wireplumber.conf.d/51-headphones.conf
+-
+-   monitor.bluez.rules = [
+-     {
+-       matches = [
+-         {
+-           node.name = "bluez_output.02_11_45_A0_B3_27.a2dp-sink"
+-         }
+-       ]
+-       actions = {
+-         update-props = {
+-           node.nick = "Headphones"
+-         }
+-       }
+-     }
+-   ]
++Bluetooth rules from upstream WirePlumber do not migrate to this Floss-only
++fork. BlueZ monitors and their settings have been removed. See
++:ref:`config_floss` for the external PCM bridge integration.
+ 
+ See also :ref:`config_modifying_configuration_rules`.
+ 
+ Porting properties configuration
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+-If you had configuration scripts that were setting properties in tables such
+-as ``alsa_monitor.properties`` or ``bluez_monitor.properties``, then in many
+-cases porting to the new format can be done as follows:
+-
+-.. code-block:: lua
+-   :caption: ~/.config/wireplumber/bluetooth.lua.d/80-bluez-properties.lua
+-
+-    bluez_monitor.properties["bluez5.roles"] = "[ a2dp_sink a2dp_source bap_sink bap_source hsp_hs hsp_ag hfp_hf hfp_ag ]"
+-    bluez_monitor.properties["bluez5.hfphsp-backend"] = "native"
+-
+-.. code-block::
+-   :caption: ~/.config/wireplumber/wireplumber.conf.d/80-bluez-properties.conf
+-
+-    monitor.bluez.properties = {
+-      bluez5.roles = [ a2dp_sink a2dp_source bap_sink bap_source hsp_hs hsp_ag hfp_hf hfp_ag ]
+-      bluez5.hfphsp-backend = "native"
+-    }
++If you had configuration scripts setting ``alsa_monitor.properties``, place
++those properties in the ``monitor.alsa.properties`` configuration section.
++BlueZ properties have no replacement in this fork; codec and profile handling
++belongs to Floss.
+ 
+ See also :ref:`config_modifying_configuration_static`.
+ 
+@@ -215,26 +168,6 @@ Disabling the D-Bus device reservation API in the ALSA monitor:
+         }
+       }
+ 
+-Disabling seat monitoring via logind in the BlueZ monitor:
+-
+-* Old format:
+-
+-  .. code-block:: lua
+-     :caption: ~/.config/wireplumber/bluetooth.lua.d/80-disable-logind.lua
+-
+-      bluez_monitor.properties["with-logind"] = false
+-
+-* New format:
+-
+-  .. code-block::
+-     :caption: ~/.config/wireplumber/wireplumber.conf.d/80-disable-logind.conf
+-
+-      wireplumber.profiles = {
+-        main = {
+-          monitor.bluez.seat-monitoring = disabled
+-        }
+-      }
+-
+ See also :ref:`config_modifying_configuration_features`.
+ 
+ Linking policy configuration (moved to settings and renamed):
+diff --git a/docs/rst/daemon/configuration/modifying_configuration.rst b/docs/rst/daemon/configuration/modifying_configuration.rst
+index e9f0ffa..bf1e28a 100644
+--- a/docs/rst/daemon/configuration/modifying_configuration.rst
++++ b/docs/rst/daemon/configuration/modifying_configuration.rst
+@@ -219,42 +219,9 @@ This will now replace the entire ``monitor.alsa.rules`` array with this new one.
+    whole array with a new one that does not contain the rule you want to remove.
+    There is no way to remove a specific element from an array using fragments.
+ 
+-Another thing worth remembering here is that this behavior of appending values
+-to arrays also works in arrays that are nested inside other arrays or objects.
+-For example, consider this fragment:
+-
+-.. code-block::
+-
+-   monitor.bluez.properties = {
+-     bluez5.codecs = [ sbc_xq aac ldac ]
+-   }
+-
+-If this is the first time that the ``bluez5.codecs`` array is being defined, it
+-will be created with the given values. If it already exists, the given values
+-will be appended to the existing array. If you want to make sure that this
+-fragment will override the existing array, you need to use the ``override.``
+-prefix on the array name:
+-
+-.. code-block::
+-
+-   monitor.bluez.properties = {
+-     override.bluez5.codecs = [ sbc_xq aac ldac ]
+-   }
+-
+-The ``override.`` prefix may also be used in JSON object keys, to override the
+-entire object with a new one. For example, to override the entire
+-``monitor.bluez.properties`` object, you can use a fragment like this:
+-
+-.. code-block::
+-
+-   override.monitor.bluez.properties = {
+-     bluez5.codecs = [ sbc_xq aac ldac ]
+-   }
+-
+-Here, the entire ``monitor.bluez.properties`` object will be replaced with the
+-new one, and all previous key-value pairs configured will be discarded. This
+-also means that the ``bluez5.codecs`` array will be replaced with the new one
+-and does not require the ``override.`` prefix.
++Array values also append when nested inside other objects. Prefix the nested
++array key with ``override.`` to replace it. The same prefix can replace an
++entire object, discarding its previous keys and values.
+ 
+ .. note::
+ 
+diff --git a/docs/rst/daemon/configuration/settings.rst b/docs/rst/daemon/configuration/settings.rst
+index 0b9ecce..f267fe5 100644
+--- a/docs/rst/daemon/configuration/settings.rst
++++ b/docs/rst/daemon/configuration/settings.rst
+@@ -19,41 +19,6 @@ previous section: :ref:`config_configuration_option_types`.
+    them at runtime. The authoritative list is the
+    ``wireplumber.settings.schema`` section of ``wireplumber.conf``.
+ 
+-.. describe:: bluetooth.use-persistent-storage
+-
+-   When enabled, WirePlumber remembers whether a Bluetooth device was switched
+-   to headset mode, and restores that state the next time the device connects.
+-
+-   :Default value: ``true``
+-   :See also: ``bluetooth.autoswitch-to-headset-profile``
+-
+-.. describe:: bluetooth.autoswitch-to-headset-profile
+-
+-   When enabled, Bluetooth headsets always expose a microphone, and the device
+-   is automatically switched to headset mode (HSP/HFP) when an application
+-   starts recording. When the recording stream goes away, the previous profile
+-   is restored.
+-
+-   Headset mode has considerably lower audio quality than A2DP, which is why
+-   the switch is only made while a capture stream is actually present.
+-
+-   :Default value: ``true``
+-
+-.. describe:: bluetooth.profile-preference
+-
+-   Controls which A2DP codec configuration is preferred when a profile is
+-   selected automatically for a Bluetooth device. Only two values are accepted:
+-
+-   ``quality``
+-      prefer the codec with the best audio quality
+-
+-   ``latency``
+-      prefer the codec with the lowest latency
+-
+-   Any other value logs a warning and is treated as ``quality``.
+-
+-   :Default value: ``"quality"``
+-
+ .. describe:: device.restore-profile
+ 
+    When a device profile is changed manually (e.g. via pavucontrol), WirePlumber
+@@ -120,7 +85,8 @@ previous section: :ref:`config_configuration_option_types`.
+ .. describe:: device.routes.mute-on-bluetooth-playback-removed
+ 
+    The same as ``device.routes.mute-on-alsa-playback-removed``, but triggered
+-   when an active Bluetooth playback device disconnects instead.
++   when a running Floss playback sink disappears instead. The external bridge
++   does not need a PipeWire Device or card-profile ID.
+ 
+    :Default value: ``false``
+ 
+@@ -253,7 +219,7 @@ previous section: :ref:`config_configuration_option_types`.
+    When enabled, audio device *sink* nodes are configured with a single mono
+    channel instead of their native channel layout.
+ 
+-   This only applies to ALSA PCM sinks and Bluetooth A2DP sinks; it does not
++   This only applies to ALSA PCM sinks and Floss audio sinks; it does not
+    affect sources or streams.
+ 
+    :Default value: ``false``
+diff --git a/docs/rst/daemon/locations.rst b/docs/rst/daemon/locations.rst
+index 2b1f26d..86cbe1c 100644
+--- a/docs/rst/daemon/locations.rst
++++ b/docs/rst/daemon/locations.rst
+@@ -201,13 +201,6 @@ and is named after the component that owns it. Each of them is written by a
+ single script, which is loaded by the feature listed below, and most of them
+ can additionally be switched off at runtime with a setting:
+ 
+-``bluetooth-autoswitch``
+-  The profile that each Bluetooth device had before it was automatically
+-  switched to a headset profile, so that it can be restored afterwards.
+-
+-  :feature: ``hooks.device.profile.autoswitch-bluetooth``
+-  :settings: ``bluetooth.use-persistent-storage``
+-
+ ``default-nodes``
+   The nodes that the user has selected as the default sink, source, etc.
+   These selections take precedence over the automatic, priority-based
+@@ -283,10 +276,8 @@ It is meant to be inherited by other profiles, as the built-in
+ 
+ This makes sense on embedded systems, which should always boot into a known
+ default state instead of remembering the changes that were made in the previous
+-boot. Note, however, that this mixin does not cover the two remaining state
+-files: ``bluetooth-autoswitch`` is controlled only by the
+-``bluetooth.use-persistent-storage`` setting, and ``sm-settings`` is written
+-whenever a setting is explicitly saved.
++boot. The mixin does not cover ``sm-settings``, which is written whenever a
++setting is explicitly saved.
+ 
+ A **setting**, on the other hand, is a runtime switch. The scripts subscribe to
+ their settings and register or unregister their hooks on the fly, so state
+diff --git a/docs/rst/daemon/multi_instance.rst b/docs/rst/daemon/multi_instance.rst
+index c5d5193..f2efe9f 100644
+--- a/docs/rst/daemon/multi_instance.rst
++++ b/docs/rst/daemon/multi_instance.rst
+@@ -23,8 +23,10 @@ select the profile to load:
+   $ wireplumber --profile=custom
+ 
+ When no particular profile is specified, the ``main`` profile is loaded.
++External Floss bridge sinks are managed by the policy instance; there is no
++separate Bluetooth monitor instance in this fork.
+ 
+-For multi-instance configuration, the default ``wireplumber.conf`` specifies 4
++For multi-instance configuration, the default ``wireplumber.conf`` specifies 3
+ profiles. The complete list of shipped profiles, including the single-instance
+ ones, is in :ref:`config_shipped_profiles`.
+ 
+@@ -39,12 +41,6 @@ ones, is in :ref:`config_shipped_profiles`.
+   The audio profile runs the ALSA and ALSA MIDI monitors, which make audio &
+   MIDI devices available to PipeWire.
+ 
+-.. describe:: bluetooth
+-
+-  The bluetooth profile runs the BlueZ and BlueZ MIDI monitors, which enable
+-  Bluetooth audio & MIDI devices and other Bluetooth functionality tied to the
+-  A2DP, HSP, HFP and BAP profiles, using BlueZ.
+-
+ .. describe:: video-capture
+ 
+   The video-capture profile runs the V4L2 and libcamera monitors, which make
+@@ -54,7 +50,7 @@ ones, is in :ref:`config_shipped_profiles`.
+ .. note::
+ 
+   The ``main`` profile includes all the functionality of the ``policy``,
+-  ``audio``, ``video-capture`` and ``bluetooth`` profiles combined (i.e. it is
++  ``audio`` and ``video-capture`` profiles combined (i.e. it is
+   the default for a standard single instance configuration). You should never
+   load the ``main`` profile alongside these other 4 profiles, as their
+   functionality will conflict.
+@@ -77,7 +73,6 @@ meant to be started with the name of the profile as a template argument:
+   $ systemctl --user enable wireplumber@policy
+   $ systemctl --user enable wireplumber@audio
+   $ systemctl --user enable wireplumber@video-capture
+-  $ systemctl --user enable wireplumber@bluetooth
+ 
+ .. note::
+ 
+diff --git a/docs/rst/resources/testing.rst b/docs/rst/resources/testing.rst
+index fa13ced..7c301d2 100644
+--- a/docs/rst/resources/testing.rst
++++ b/docs/rst/resources/testing.rst
+@@ -118,10 +118,6 @@ The following examples are available:
+   - **filter-chain.lua**: loads *libpipewire-module-filter-chain* with a 6-band
+     equalizer configuration, demonstrating how to load a PipeWire module that
+     takes a JSON string as arguments
+-  - **bt-profile-switch.lua**: a standalone policy script that switches the
+-    profile of a Bluetooth device
+-  - **bt-pinephone.lua**: platform-specific management of the offload SCO nodes
+-    on the PinePhone
+ 
+ C examples
+ ^^^^^^^^^^
+diff --git a/po/POTFILES.in b/po/POTFILES.in
+index 3f6d97d..56f40a0 100644
+--- a/po/POTFILES.in
++++ b/po/POTFILES.in
+@@ -1,4 +1,3 @@
+ src/scripts/monitors/alsa.lua
+-src/scripts/monitors/bluez-midi.lua
+ src/scripts/monitors/libcamera/name-node.lua
+ po/conf.pot
+diff --git a/src/config/wireplumber.conf b/src/config/wireplumber.conf
+index 3fdf47b..15f33b1 100644
+--- a/src/config/wireplumber.conf
++++ b/src/config/wireplumber.conf
+@@ -9,7 +9,6 @@ context.spa-libs = {
+   ## <factory-name regex> = <library-name>
+ 
+   api.alsa.*      = alsa/libspa-alsa
+-  api.bluez5.*    = bluez5/libspa-bluez5
+   api.v4l2.*      = v4l2/libspa-v4l2
+   api.libcamera.* = libcamera/libspa-libcamera
+   audio.convert.* = audioconvert/libspa-audioconvert
+@@ -63,7 +62,8 @@ wireplumber.profiles = {
+   ##   ...
+   ## }
+ 
+-  # The default profile
++  # The default profile. Floss audio arrives through external PCM bridge nodes;
++  # standard policy handles those Audio/Sink nodes without a Bluetooth monitor.
+   main = {
+     inherits = [ base ]
+ 
+@@ -73,7 +73,6 @@ wireplumber.profiles = {
+     policy.standard = required
+ 
+     hardware.audio = required
+-    hardware.bluetooth = required
+     hardware.video-capture = required
+   }
+ 
+@@ -91,7 +90,6 @@ wireplumber.profiles = {
+   video-only = {
+     inherits = [ main ]
+     hardware.audio = disabled
+-    hardware.bluetooth = disabled
+   }
+ 
+   ##
+@@ -110,11 +108,6 @@ wireplumber.profiles = {
+     hardware.audio = required
+   }
+ 
+-  bluetooth = {
+-    inherits = [ base ]
+-    hardware.bluetooth = required
+-  }
+-
+   video-capture = {
+     inherits = [ base ]
+     hardware.video-capture = required
+@@ -141,7 +134,6 @@ wireplumber.profiles = {
+     script.client.access-portal = disabled
+ 
+     support.logind = disabled
+-    monitor.bluez.seat-monitoring = disabled
+   }
+ 
+   # Disable storing/restoring runtime state information regarding
+@@ -438,11 +430,6 @@ wireplumber.components = [
+     type = virtual, provides = monitor.alsa-midi.monitoring,
+     requires = [ api.file-monitor ]
+   }
+-  {
+-    type = virtual, provides = monitor.bluez.seat-monitoring,
+-    requires = [ support.logind ]
+-  }
+-
+   ## ALSA monitor
+   {
+     name = monitors/alsa.lua, type = script/lua
+@@ -455,65 +442,6 @@ wireplumber.components = [
+     provides = monitor.alsa-midi
+     wants = [ monitor.alsa-midi.monitoring ]
+   }
+-  ## Bluetooth monitor
+-  {
+-    name = monitors/bluez/name-device.lua, type = script/lua
+-    provides = hooks.monitor.bluez-name-device
+-  }
+-  {
+-    name = monitors/bluez/create-device.lua, type = script/lua
+-    provides = hooks.monitor.bluez-create-device
+-  }
+-  {
+-    name = monitors/bluez/remove-device.lua, type = script/lua
+-    provides = hooks.monitor.bluez-remove-device
+-  }
+-  {
+-    name = monitors/bluez/name-node.lua, type = script/lua
+-    provides = hooks.monitor.bluez-name-node
+-  }
+-  {
+-    name = monitors/bluez/create-loopback-node.lua, type = script/lua
+-    provides = hooks.monitor.bluez-create-loopback-node
+-  }
+-  {
+-    name = monitors/bluez/create-offload-node.lua, type = script/lua
+-    provides = hooks.monitor.bluez-create-offload-node
+-  }
+-  {
+-    name = monitors/bluez/create-set-node.lua, type = script/lua
+-    provides = hooks.monitor.bluez-create-set-node
+-  }
+-  {
+-    name = monitors/bluez/create-node.lua, type = script/lua
+-    provides = hooks.monitor.bluez-create-node
+-  }
+-  {
+-    name = monitors/bluez/remove-node.lua, type = script/lua
+-    provides = hooks.monitor.bluez-remove-node
+-  }
+-  {
+-    name = monitors/bluez/enumerate-device.lua, type = script/lua
+-    provides = monitor.bluez
+-    requires = [ support.client-context,
+-                 support.standard-event-source,
+-                 hooks.monitor.bluez-create-device,
+-                 hooks.monitor.bluez-remove-device,
+-                 hooks.monitor.bluez-create-loopback-node,
+-                 hooks.monitor.bluez-create-offload-node,
+-                 hooks.monitor.bluez-create-set-node,
+-                 hooks.monitor.bluez-create-node,
+-                 hooks.monitor.bluez-remove-node ]
+-    wants = [ monitor.bluez.seat-monitoring,
+-              hooks.monitor.bluez-name-device,
+-              hooks.monitor.bluez-name-node ]
+-  }
+-  {
+-    name = monitors/bluez-midi.lua, type = script/lua
+-    provides = monitor.bluez-midi
+-    requires = [ support.client-context ]
+-    wants = [ monitor.bluez.seat-monitoring ]
+-  }
+   ## v4l2 monitor
+   {
+     name = monitors/v4l2/name-device.lua, type = script/lua
+@@ -641,14 +569,9 @@ wireplumber.components = [
+     name = device/apply-profile.lua, type = script/lua
+     provides = hooks.device.profile.apply
+   }
+-  {
+-    name = device/autoswitch-bluetooth-profile.lua, type = script/lua
+-    provides = hooks.device.profile.autoswitch-bluetooth
+-  }
+   {
+     type = virtual, provides = policy.device.profile
+     requires = [ hooks.device.profile.select,
+-                 hooks.device.profile.autoswitch-bluetooth,
+                  hooks.device.profile.apply ]
+     wants = [ hooks.device.profile.find-voice-call,
+               hooks.device.profile.find-best,
+@@ -869,10 +792,6 @@ wireplumber.components = [
+     type = virtual, provides = hardware.audio
+     wants = [ monitor.alsa, monitor.alsa-midi ]
+   }
+-  {
+-    type = virtual, provides = hardware.bluetooth
+-    wants = [ monitor.bluez, monitor.bluez-midi ]
+-  }
+   {
+     type = virtual, provides = hardware.video-capture
+     wants = [ monitor.v4l2, monitor.libcamera ]
+@@ -946,26 +865,6 @@ wireplumber.components.rules = [
+ ]
+ 
+ wireplumber.settings.schema = {
+-  ## Bluetooth
+-  bluetooth.use-persistent-storage = {
+-    name = "Persistent storage"
+-    description = "Remember and restore Bluetooth headset mode status"
+-    type = "bool"
+-    default = true
+-  }
+-  bluetooth.autoswitch-to-headset-profile = {
+-    name = "Auto-switch to headset profile"
+-    description = "Always show microphone for Bluetooth headsets, and switch to headset mode when recording"
+-    type = "bool"
+-    default = true
+-  }
+-  bluetooth.profile-preference = {
+-    name = "Bluetooth profile preference"
+-    description = "Prefer better quality or better latency when auto-selecting profiles (only 'quality' or 'latency' values are accepted)"
+-    type = "string"
+-    default = "quality"
+-  }
+-
+   ## Device
+   device.restore-profile = {
+     name = "Restore profile"
+@@ -1002,8 +901,8 @@ wireplumber.settings.schema = {
+     default = false
+   }
+   device.routes.mute-on-bluetooth-playback-removed = {
+-    name = "Auto-mute on Bluetooth audio disconnect"
+-    description = "Automatically mute all audio devices when active Bluetooth headphones/speakers are disconnected to prevent unintended sound output"
++    name = "Auto-mute on Floss audio disconnect"
++    description = "Mute ALSA output routes when a running Floss audio sink disappears to prevent unintended speaker playback"
+     type = "bool"
+     default = false
+   }
+diff --git a/src/config/wireplumber.conf.d.examples/bluetooth.conf b/src/config/wireplumber.conf.d.examples/bluetooth.conf
+deleted file mode 100644
+index 23287ec..0000000
+--- a/src/config/wireplumber.conf.d.examples/bluetooth.conf
++++ /dev/null
+@@ -1,183 +0,0 @@
+-## Template WirePlumber Bluetooth configuration
+-
+-wireplumber.settings = {
+-  ## Whether to store state on the filesystem.
+-  # bluetooth.use-persistent-storage = true
+-
+-  ## Whether to use headset profile in the presence of an input stream.
+-  # bluetooth.autoswitch-to-headset-profile = true
+-}
+-
+-monitor.bluez.properties = {
+-  ## The properties used when constructing the 'api.bluez5.enum.dbus' plugin
+-
+-  ## Enabled roles (default: [ a2dp_sink a2dp_source bap_sink bap_source hfp_hf hfp_ag ])
+-  ##
+-  ## Currently some headsets (Sony WH-1000XM3) are not working with
+-  ## both hsp_ag and hfp_ag enabled, so by default we enable only HFP.
+-  ##
+-  ## Supported roles: hsp_hs (HSP Headset),
+-  ##                  hsp_ag (HSP Audio Gateway),
+-  ##                  hfp_hf (HFP Hands-Free),
+-  ##                  hfp_ag (HFP Audio Gateway)
+-  ##                  a2dp_sink (A2DP Audio Sink)
+-  ##                  a2dp_source (A2DP Audio Source)
+-  ##                  bap_sink (LE Audio Basic Audio Profile Sink)
+-  ##                  bap_source (LE Audio Basic Audio Profile Source)
+-  # bluez5.roles = [ a2dp_sink a2dp_source bap_sink bap_source hsp_hs hsp_ag hfp_hf hfp_ag ]
+-
+-  ## Enabled A2DP codecs (default: all).
+-  # bluez5.codecs = [ sbc sbc_xq aac ldac aptx aptx_hd aptx_ll aptx_ll_duplex faststream faststream_duplex ]
+-
+-  ## These features do not work on all headsets, so they are enabled
+-  ## by default based on the hardware database. They can also be
+-  ## forced on/off for all devices by the following options:
+-  # bluez5.enable-sbc-xq = true
+-  # bluez5.enable-msbc = true
+-  # bluez5.enable-hw-volume = true
+-
+-  ## HFP/HSP backend (default: native).
+-  ## Available values: any, none, hsphfpd, ofono, native
+-  # bluez5.hfphsp-backend = "native"
+-
+-  ## HFP/HSP native backend modem (default: none).
+-  ## Available values: none, any or the modem device string as found in
+-  ## 'Device' property of org.freedesktop.ModemManager1.Modem interface
+-  # bluez5.hfphsp-backend-native-modem = "none"
+-
+-  ## HFP/HSP hardware offload SCO support (default: false).
+-  ## Using this feature requires a custom WirePlumber script that
+-  ## handles audio routing in a platform-specific way. See
+-  ## tests/examples/bt-pinephone.lua for an example.
+-  # bluez5.hw-offload-sco = false
+-
+-  ## Properties for the A2DP codec configuration
+-  # bluez5.default.rate = 48000
+-  # bluez5.default.channels = 2
+-
+-  ## Register dummy AVRCP player. Some devices have wrongly functioning
+-  ## volume or playback controls if this is not enabled. Default: false
+-  # bluez5.dummy-avrcp-player = true
+-
+-  ## Opus Pro Audio mode settings
+-  # bluez5.a2dp.opus.pro.channels = 3
+-  # bluez5.a2dp.opus.pro.coupled-streams = 1
+-  # bluez5.a2dp.opus.pro.locations = [ FL,FR,LFE ]
+-  # bluez5.a2dp.opus.pro.max-bitrate = 600000
+-  # bluez5.a2dp.opus.pro.frame-dms = 50
+-  # bluez5.a2dp.opus.pro.bidi.channels = 1
+-  # bluez5.a2dp.opus.pro.bidi.coupled-streams = 0
+-  # bluez5.a2dp.opus.pro.bidi.locations = [ FC ]
+-  # bluez5.a2dp.opus.pro.bidi.max-bitrate = 160000
+-  # bluez5.a2dp.opus.pro.bidi.frame-dms = 400
+-}
+-
+-monitor.bluez-midi.properties = {
+-  ## The properties used when constructing the 'api.bluez5.midi.enum' plugin
+-}
+-
+-monitor.bluez-midi.servers = [
+-  ## List of MIDI server node names. Each node name given will create a new instance
+-  ## of a BLE MIDI service. Typical BLE MIDI instruments have on service instance,
+-  ## so adding more than one here may confuse some clients. The node property matching
+-  ## rules below apply also to these servers.
+-
+-  # "bluez_midi.server"
+-]
+-
+-monitor.bluez.rules = [
+-  ## The list of monitor rules
+-
+-  ## This rule example allows changing properties on all Bluetooth devices.
+-  # {
+-  #   matches = [
+-  #     {
+-  #       ## This matches all bluetooth devices.
+-  #       device.name = "~bluez_card.*"
+-  #     }
+-  #   ]
+-  #   actions = {
+-  #     update-props = {
+-  #       ## Auto-connect device profiles on start up or when only partial
+-  #       ## profiles have connected. Disabled by default if the property
+-  #       ## is not specified.
+-  #       bluez5.auto-connect = [ hfp_hf hsp_hs a2dp_sink hfp_ag hsp_ag a2dp_source ]
+-  #
+-  #       ## Hardware volume control (default: [ hfp_ag hsp_ag a2dp_source ])
+-  #       bluez5.hw-volume = [ hfp_hf hsp_hs a2dp_sink hfp_ag hsp_ag a2dp_source ]
+-  #
+-  #       ## LDAC encoding quality
+-  #       ## Available values: auto (Adaptive Bitrate, default)
+-  #       ##                   hq   (High Quality, 990/909kbps)
+-  #       ##                   sq   (Standard Quality, 660/606kbps)
+-  #       ##                   mq   (Mobile use Quality, 330/303kbps)
+-  #       bluez5.a2dp.ldac.quality = "auto"
+-  #
+-  #       ## AAC variable bitrate mode
+-  #       ## Available values: 0 (cbr, default), 1-5 (quality level)
+-  #       bluez5.a2dp.aac.bitratemode = 0
+-  #
+-  #       ## Opus Pro Audio encoding mode: audio, voip, lowdelay
+-  #       bluez5.a2dp.opus.pro.application = "audio"
+-  #       bluez5.a2dp.opus.pro.bidi.application = "audio"
+-  #     }
+-  #   }
+-  # }
+-
+-  ## This rule example allows changing properties on all Bluetooth nodes.
+-  # {
+-  #   matches = [
+-  #     {
+-  #       ## Matches all sources.
+-  #       node.name = "~bluez_input.*"
+-  #     }
+-  #     {
+-  #       ## Matches all sinks.
+-  #       node.name = "~bluez_output.*"
+-  #     }
+-  #   ]
+-  #   actions = {
+-  #     update-props = {
+-  #       node.nick              = "My Node"
+-  #       priority.driver        = 100
+-  #       priority.session       = 100
+-  #       node.pause-on-idle     = false
+-  #       resample.quality       = 4
+-  #       channelmix.normalize   = false
+-  #       channelmix.mix-lfe     = false
+-  #       session.suspend-timeout-seconds = 5
+-  #       monitor.channel-volumes = false
+-  #
+-  #       ## Media source role, "input" or "playback"
+-  #       ## Defaults to "playback", playing stream to speakers
+-  #       ## Set to "input" to use as an input for apps
+-  #       bluez5.media-source-role = "input"
+-  #     }
+-  #   }
+-  # }
+-]
+-
+-monitor.bluez-midi.rules = [
+-  ## The list of MIDI monitor rules
+-
+-  ## This rule example allows changing properties on all Bluetooth MIDI nodes.
+-  # {
+-  #   matches = [
+-  #     ## Matches all bluez midi nodes.
+-  #     {
+-  #       ## Matches all sources.
+-  #       node.name = "~bluez_midi.*"
+-  #     }
+-  #   ]
+-  #   actions = {
+-  #     update-props = {
+-  #       node.nick = "My Node"
+-  #       priority.driver = 100
+-  #       priority.session = 100
+-  #       node.pause-on-idle = false
+-  #       session.suspend-timeout-seconds = 5
+-  #       node.latency-offset-msec = 0
+-  #     }
+-  #   }
+-  # }
+-]
+diff --git a/src/config/wireplumber.conf.d.examples/device.conf b/src/config/wireplumber.conf.d.examples/device.conf
+index b6e20b1..ea15205 100644
+--- a/src/config/wireplumber.conf.d.examples/device.conf
++++ b/src/config/wireplumber.conf.d.examples/device.conf
+@@ -15,29 +15,3 @@ wireplumber.settings = {
+   # device.routes.default-source-volume = 1.0
+ }
+ 
+-# # This rule example shows how to prioritize between available profiles(codecs)
+-# # of a bluetooth device.
+-# device.profile.priority.rules = [
+-#   # The following are the default rules applied if none overrides them.
+-#   {
+-#     matches = [
+-#       {
+-#         device.name = "~bluez_card.*"
+-#       }
+-#     ]
+-#     actions = {
+-#       update-props = {
+-#         # lower the index higher the priority
+-#         priorities = [
+-#           "a2dp-sink-aptx_ll",
+-#           "a2dp-sink-aac",
+-#           "a2dp-sink-sbc",
+-#           "a2dp-sink-aptx",
+-#           "a2dp-sink-aptx_hd",
+-#           "a2dp-sink-ldac",
+-#           "a2dp-sink-sbc_xq",
+-#         ]
+-#       }
+-#     }
+-#   }
+-]
+diff --git a/src/scripts/device/README.rst b/src/scripts/device/README.rst
+index 8e927d2..dd101f0 100644
+--- a/src/scripts/device/README.rst
++++ b/src/scripts/device/README.rst
+@@ -25,7 +25,7 @@ Hooks
+    * - device/select-profile-on-device-enumprofile-changed
+      - select-profile.lua
+      - EnumProfiles changed
+-     - schedules a 'select-profile' event unless Bluetooth autoswitch is enabled for a Bluetooth device
++     - schedules a 'select-profile' event
+ 
+    * - device/select-route
+      - select-routes.lua
+diff --git a/src/scripts/device/automute-alsa-routes.lua b/src/scripts/device/automute-alsa-routes.lua
+index 6297f50..cf4ed46 100644
+--- a/src/scripts/device/automute-alsa-routes.lua
++++ b/src/scripts/device/automute-alsa-routes.lua
+@@ -55,11 +55,11 @@ function evaluateNode (node, source)
+     return
+   end
+ 
+-  -- Emite event if setting is enabled for this API
++  -- Emit event if setting is enabled for this API
+   local mute_alsa = Settings.get_boolean ("device.routes.mute-on-alsa-playback-removed")
+-  local mute_bluez = Settings.get_boolean ("device.routes.mute-on-bluetooth-playback-removed")
++  local mute_floss = Settings.get_boolean ("device.routes.mute-on-bluetooth-playback-removed")
+   if (mute_alsa and node_api == "alsa") or
+-      (mute_bluez and node_api == "bluez5") then
++      (mute_floss and node_api == "floss") then
+     local e = source:call ("create-event", "mute-alsa-devices", nil, nil)
+     e:set_data ("device-id", node_dev_id)
+     e:set_data ("card-profile-device", node_cpd)
+@@ -129,13 +129,20 @@ update_nodes_info_hook = SimpleEventHook {
+       Constraint { "device.id", "+" },
+       Constraint { "card.profile.device", "+", type = "pw" },
+     },
++    EventInterest {
++      Constraint { "event.type", "=", "node-state-changed" },
++      Constraint { "media.class", "matches", "Audio/Sink" },
++      Constraint { "device.api", "=", "floss", type = "pw" },
++    },
+   },
+   execute = function (event)
+     local node = event:get_subject ()
+     local node_id = node["bound-id"]
+     local device_api = node.properties ["device.api"]
+-    local device_id = node.properties ["device.id"]
+-    local cpd = node.properties ["card.profile.device"]
++    -- External Floss sinks have no PipeWire Device or card profile. Sentinel
++    -- IDs ensure their removal mutes every ALSA output route, with no exception.
++    local device_id = node.properties ["device.id"] or "-1"
++    local cpd = node.properties ["card.profile.device"] or "-1"
+     local new_state = event:get_properties ()["event.subject.new-state"]
+ 
+     -- Update node info
+@@ -194,15 +201,15 @@ evaluate_mute_on_node_removed_hook = SimpleEventHook {
+ 
+ function toggleState ()
+   local mute_alsa = Settings.get_boolean ("device.routes.mute-on-alsa-playback-removed")
+-  local mute_bluez = Settings.get_boolean ("device.routes.mute-on-bluetooth-playback-removed")
+-  if (mute_alsa or mute_bluez) and not hooks_registered then
++  local mute_floss = Settings.get_boolean ("device.routes.mute-on-bluetooth-playback-removed")
++  if (mute_alsa or mute_floss) and not hooks_registered then
+     nodes_info = {}
+     mute_alsa_devices_hook:register ()
+     update_nodes_info_hook:register ()
+     evaluate_mute_on_device_route_changed_hook:register ()
+     evaluate_mute_on_node_removed_hook:register ()
+     hooks_registered = true
+-  elseif not mute_alsa and not mute_bluez and hooks_registered then
++  elseif not mute_alsa and not mute_floss and hooks_registered then
+     mute_alsa_devices_hook:remove ()
+     update_nodes_info_hook:remove ()
+     evaluate_mute_on_device_route_changed_hook:remove ()
+diff --git a/src/scripts/device/autoswitch-bluetooth-profile.lua b/src/scripts/device/autoswitch-bluetooth-profile.lua
+deleted file mode 100644
+index 27c79dd..0000000
+--- a/src/scripts/device/autoswitch-bluetooth-profile.lua
++++ /dev/null
+@@ -1,628 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2021 Asymptotic Inc.
+---    @author Sanchayan Maity <sanchayan@asymptotic.io>
+---
+--- Based on bt-profile-switch.lua in tests/examples
+--- Copyright © 2021 George Kiagiadakis
+---
+--- Based on bluez-autoswitch in media-session
+--- Copyright © 2021 Pauli Virtanen
+---
+--- SPDX-License-Identifier: MIT
+---
+--- This script is charged to automatically change BT profiles on a device. If a
+--- client is linked to the device's loopback source node, the associated BT
+--- device profile is automatically switched to HSP/HFP. If there is no clients
+--- linked to the device's loopback source node, the BT device profile is
+--- switched back to A2DP profile.
+---
+--- We switch to the highest priority profile that has an Input route available.
+--- The reason for this is that we may have microphone enabled with non-HFP
+--- codecs eg. Faststream.
+--- When a stream goes away if the list with which we track the streams above
+--- is empty, then we revert back to the old profile.
+-
+--- settings file: bluetooth.conf
+-
+-lutils = require ("linking-utils")
+-cutils = require ("common-utils")
+-log = Log.open_topic ("s-device")
+-persistent_storage_hooks_registered = false
+-autoswitch_hooks_registered = false
+-
+-local PROFILE_RESTORE_TIMEOUT_MSEC = 2000
+-local PROFILE_SWITCH_TIMEOUT_MSEC = 500
+-
+-local state = nil
+-local headset_profiles = {}
+-local non_headset_profiles = {}
+-local capture_stream_links = {}
+-local restore_timeout_source = {}
+-local switch_timeout_source = {}
+-
+-function saveHeadsetProfile (device, profile_name, persistent)
+-  local key = "saved-headset-profile:" .. device.properties ["device.name"]
+-  headset_profiles [key] = profile_name
+-  if state ~= nil and persistent then
+-    state:save_after_timeout (headset_profiles)
+-  end
+-end
+-
+-function getSavedHeadsetProfile (device)
+-  local key = "saved-headset-profile:" .. device.properties ["device.name"]
+-  return headset_profiles [key]
+-end
+-
+-function saveNonHeadsetProfile (device, profile_name)
+-  non_headset_profiles [device.properties ["device.name"]] = profile_name
+-end
+-
+-function getSavedNonHeadsetProfile (device)
+-  return non_headset_profiles [device.properties ["device.name"]]
+-end
+-
+-function findProfile (device, index, name)
+-  for p in device:iterate_params ("EnumProfile") do
+-    local profile = cutils.parseParam (p, "EnumProfile")
+-    if profile ~= nil then
+-      if (index ~= nil and profile.index == index) or
+-         (name ~= nil and profile.name == name) then
+-        return profile
+-      end
+-    end
+-  end
+-
+-  return nil
+-end
+-
+-function getCurrentProfile (device)
+-  for p in device:iterate_params ("Profile") do
+-    local profile = cutils.parseParam (p, "Profile")
+-    if profile then
+-      return profile
+-    end
+-  end
+-  return nil
+-end
+-
+-function hasProfileInputRoute (device, profile_index)
+-  for p in device:iterate_params ("EnumRoute") do
+-    local route = cutils.parseParam (p, "EnumRoute")
+-    if route and route.direction == "Input" and route.profiles then
+-      for _, v in pairs (route.profiles) do
+-        if v == profile_index then
+-          return true
+-        end
+-      end
+-    end
+-  end
+-  return false
+-end
+-
+-function isHeadsetProfile (device, profile)
+-  if hasProfileInputRoute (device, profile.index) and
+-      (string.find (profile.name, "^headset%-head%-unit") or profile.name == "bap-duplex") then
+-    return true
+-  else
+-    return false
+-  end
+-end
+-
+-function highestPrioHeadsetProfile (device)
+-  local found_profile = nil
+-  for p in device:iterate_params ("EnumRoute") do
+-    local route = cutils.parseParam (p, "EnumRoute")
+-    if route ~= nil and route.profiles ~= nil and route.direction == "Input" then
+-      for _, v in pairs (route.profiles) do
+-        local p = findProfile (device, v)
+-        if p ~= nil and isHeadsetProfile (device, p) then
+-          if found_profile == nil or found_profile.priority < p.priority then
+-            found_profile = p
+-          end
+-        end
+-      end
+-    end
+-  end
+-  return found_profile
+-end
+-
+-function highestPrioNonHeadsetProfile (device)
+-  local found_profile = nil
+-  for p in device:iterate_params ("EnumRoute") do
+-    local route = cutils.parseParam (p, "EnumRoute")
+-    if route ~= nil and route.profiles ~= nil and route.direction ~= "Input" then
+-      for _, v in pairs (route.profiles) do
+-        local p = findProfile (device, v)
+-        if p ~= nil and not isHeadsetProfile (device, p) then
+-          if found_profile == nil or found_profile.priority < p.priority then
+-            found_profile = p
+-          end
+-        end
+-      end
+-    end
+-  end
+-  return found_profile
+-end
+-
+-function switchDeviceToHeadsetProfile (dev_id, device_om)
+-  -- Find the actual device
+-  local device = device_om:lookup {
+-      Constraint { "bound-id", "=", dev_id, type = "gobject" }
+-  }
+-  if device == nil then
+-    log:info ("Device with id " .. tostring(dev_id).. " not found")
+-    return
+-  end
+-
+-  -- Do not switch if the current profile is already a headset profile
+-  local cur_profile = getCurrentProfile (device)
+-  if cur_profile ~= nil and isHeadsetProfile (device, cur_profile) then
+-    log:info (device,
+-        "Current profile is already a headset profile, no need to switch")
+-    return
+-  elseif cur_profile == nil then
+-    log:info (device, "Could not get current profile, not switching")
+-    return
+-  end
+-
+-  -- Get saved headset profile if any, otherwise find the highest priority one
+-  local profile = nil
+-  local profile_name = getSavedHeadsetProfile (device)
+-  if profile_name ~= nil then
+-    profile = findProfile (device, nil, profile_name)
+-    if profile ~= nil and not isHeadsetProfile (device, profile) then
+-      saveHeadsetProfile (device, nil, false)
+-      profile = nil
+-    end
+-  end
+-  if profile == nil then
+-    profile = highestPrioHeadsetProfile (device)
+-  end
+-
+-  -- Switch if headset profile was found
+-  if profile ~= nil then
+-    local pod = Pod.Object {
+-      "Spa:Pod:Object:Param:Profile", "Profile",
+-      index = profile.index,
+-      save = false
+-    }
+-    log:info (device, "Switching profile from: " .. cur_profile.name
+-          .. " to: " .. profile.name)
+-    device:set_params ("Profile", pod)
+-  else
+-    log:warning ("Could not find valid headset profile, not switching")
+-  end
+-end
+-
+-function restoreProfile (dev_id, device_om)
+-  -- Find the actual device
+-  local device = device_om:lookup {
+-      Constraint { "bound-id", "=", dev_id, type = "gobject" }
+-  }
+-  if device == nil then
+-    log:info ("Device with id " .. tostring(dev_id).. " not found")
+-    return
+-  end
+-
+-  -- Do not restore if the current profile is already a non-headset profile
+-  local cur_profile = getCurrentProfile (device)
+-  if cur_profile ~= nil and not isHeadsetProfile (device, cur_profile) then
+-    log:info (device,
+-        "Current profile is already a non-headset profile, no need to restore")
+-    return
+-  elseif cur_profile == nil then
+-    log:info (device, "Could not get current profile, not switching")
+-    return
+-  end
+-
+-  -- Get saved non-headset profile if any, otherwise find the highest priority one
+-  local profile = nil
+-  local profile_name = getSavedNonHeadsetProfile (device)
+-  if profile_name ~= nil then
+-    profile = findProfile (device, nil, profile_name)
+-    if profile ~= nil and isHeadsetProfile (device, profile) then
+-      saveNonHeadsetProfile (device, nil)
+-      profile = nil
+-    end
+-  end
+-  if profile == nil then
+-    profile = highestPrioNonHeadsetProfile (device)
+-  end
+-
+-  -- Restore if non-headset profile was found
+-  if profile ~= nil then
+-    local pod = Pod.Object {
+-      "Spa:Pod:Object:Param:Profile", "Profile",
+-      index = profile.index,
+-      save = false
+-    }
+-    log:info (device, "Restoring profile from: " .. cur_profile.name
+-          .. " to: " .. profile.name)
+-    device:set_params ("Profile", pod)
+-  else
+-    log:warning ("Could not find valid non-headset profile, not switching")
+-  end
+-end
+-
+-function triggerSwitchDeviceToHeadsetProfile (source, dev_id)
+-  -- Always clear any pending restore/switch callbacks when triggering a new switch
+-  if restore_timeout_source[dev_id] ~= nil then
+-    restore_timeout_source[dev_id]:destroy ()
+-    restore_timeout_source[dev_id] = nil
+-    log:info ("Cancelled profile restore on device " .. tostring (dev_id))
+-  end
+-  if switch_timeout_source[dev_id] ~= nil then
+-    switch_timeout_source[dev_id]:destroy ()
+-    switch_timeout_source[dev_id] = nil
+-    log:info ("Cancelled profile switch on device " .. tostring (dev_id))
+-  end
+-
+-  -- create new switch callback
+-  log:info ("Triggering profile switch on device " .. tostring (dev_id))
+-  switch_timeout_source[dev_id] = Core.timeout_add (PROFILE_SWITCH_TIMEOUT_MSEC, function ()
+-    switch_timeout_source[dev_id] = nil
+-
+-    local e = source:call ("create-event", "autoswitch-bluez-headset-profile", nil, nil)
+-    e:set_data ("device-id", dev_id)
+-    EventDispatcher.push_event (e)
+-  end)
+-end
+-
+-function triggerRestoreProfile (source, dev_id)
+-  -- Always clear any pending restore/switch callbacks when triggering a new restore
+-  if switch_timeout_source[dev_id] ~= nil then
+-    switch_timeout_source[dev_id]:destroy ()
+-    switch_timeout_source[dev_id] = nil
+-    log:info ("Cancelled profile switch on device " .. tostring (dev_id))
+-  end
+-  if restore_timeout_source[dev_id] ~= nil then
+-    restore_timeout_source[dev_id]:destroy ()
+-    restore_timeout_source[dev_id] = nil
+-    log:info ("Cancelled profile restore on device " .. tostring (dev_id))
+-  end
+-
+-  -- create new restore callback
+-  log:info ("Triggering profile restore on device " .. tostring (dev_id))
+-  restore_timeout_source[dev_id] = Core.timeout_add (PROFILE_RESTORE_TIMEOUT_MSEC, function ()
+-    restore_timeout_source[dev_id] = nil
+-
+-    local e = source:call ("create-event", "autoswitch-bluez-a2dp-profile", nil, nil)
+-    e:set_data ("device-id", dev_id)
+-    EventDispatcher.push_event (e)
+-  end)
+-end
+-
+-function getLinkedBluetoothLoopbackSourceNodeForStream (stream, node_om, link_om, visited_link_groups)
+-  local stream_id = stream["bound-id"]
+-
+-  -- Make sure the node is linked
+-  local link = link_om:lookup {
+-    Constraint { "link.input.node", "=", stream_id, type = "pw-global"}
+-  }
+-  if link == nil then
+-    return nil
+-  end
+-  local peer_id = link.properties["link.output.node"]
+-
+-  -- If the peer node is the BT loopback source node, return its Id.
+-  -- Otherwise recursively advance in the graph if it is linked to a filter.
+-  local bt_node = node_om:lookup {
+-      Constraint { "media.class", "matches", "Audio/Source", type = "pw-global" },
+-      Constraint { "bound-id", "=", peer_id, type = "gobject" },
+-      Constraint { "bluez5.loopback", "=", "true", type = "pw" }
+-  }
+-  if bt_node ~= nil then
+-    return bt_node
+-  else
+-    local filter_main_node = node_om:lookup {
+-      Constraint { "bound-id", "=", peer_id, type = "gobject" },
+-      Constraint { "node.link-group", "+", type = "pw" }
+-    }
+-    if filter_main_node ~= nil then
+-      local filter_link_group = filter_main_node.properties ["node.link-group"]
+-      if visited_link_groups == nil then
+-        visited_link_groups = {}
+-      end
+-      if visited_link_groups [filter_link_group] then
+-        return nil
+-      else
+-        visited_link_groups [filter_link_group] = true
+-      end
+-      for filter_stream_node in node_om:iterate {
+-          Constraint { "media.class", "matches", "Stream/Input/Audio", type = "pw-global" },
+-          Constraint { "stream.monitor", "!", "true", type = "pw" },
+-          Constraint { "bluez5.loopback", "!", "true", type = "pw" },
+-          Constraint { "node.link-group", "=", filter_link_group, type = "pw" }
+-        } do
+-        local bt_node = getLinkedBluetoothLoopbackSourceNodeForStream (filter_stream_node, node_om, link_om, visited_link_groups)
+-        if bt_node ~= nil then
+-          return bt_node
+-        end
+-      end
+-    end
+-  end
+-
+-  return nil
+-end
+-
+-function isBluetoothLoopbackSourceNodeLinkedToStream (bt_node, node_om, link_om)
+-  local bt_node_id = bt_node["bound-id"]
+-  for stream in node_om:iterate {
+-    Constraint { "media.class", "matches", "Stream/Input/Audio", type = "pw-global" },
+-    Constraint { "node.link-group", "-", type = "pw" },
+-    Constraint { "stream.monitor", "!", "true", type = "pw" },
+-    Constraint { "bluez5.loopback", "!", "true", type = "pw" }
+-  } do
+-    local linked_bt_node = getLinkedBluetoothLoopbackSourceNodeForStream (stream, node_om, link_om)
+-    if linked_bt_node ~= nil then
+-      local linked_bt_node_id = linked_bt_node ["bound-id"]
+-      if tonumber (linked_bt_node_id) == tonumber (bt_node_id) then
+-        return true
+-      end
+-    end
+-  end
+-  return false
+-end
+-
+-local switch_profile_hook = AsyncEventHook {
+-  name = "switch-profile@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "autoswitch-bluez-headset-profile" },
+-    },
+-  },
+-  steps = {
+-    start = {
+-      next = "none",
+-      execute = function (event, transition)
+-        local source = event:get_source ()
+-        local device_om = source:call ("get-object-manager", "device")
+-        local device_id = event:get_data ("device-id")
+-
+-        -- Switch profile
+-        switchDeviceToHeadsetProfile (device_id, device_om)
+-
+-        -- Wait until the profile is applied
+-        Core.sync (function ()
+-          transition:advance ()
+-        end)
+-      end
+-    },
+-  }
+-}
+-
+-local restore_profile_hook = AsyncEventHook {
+-  name = "restore-profile@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "autoswitch-bluez-a2dp-profile" },
+-    },
+-  },
+-  steps = {
+-    start = {
+-      next = "none",
+-      execute = function (event, transition)
+-        local source = event:get_source ()
+-        local device_om = source:call ("get-object-manager", "device")
+-        local device_id = event:get_data ("device-id")
+-
+-        -- Restore profile
+-        restoreProfile (device_id, device_om)
+-
+-        -- Wait until the profile is applied
+-        Core.sync (function ()
+-          transition:advance ()
+-        end)
+-      end
+-    },
+-  }
+-}
+-
+-local evaluate_bluetooth_profiles_hook = SimpleEventHook {
+-  name = "evaluate-bluetooth-profiles@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "evaluate-bluetooth-profiles" },
+-    },
+-  },
+-  execute = function (event)
+-    local source = event:get_source ()
+-    local node_om = source:call ("get-object-manager", "node")
+-    local link_om = source:call ("get-object-manager", "link")
+-
+-    -- Evaluate all bluetooth loopback source nodes, and switch to headset
+-    -- profile only if the node is running and linked to a stream that is not a
+-    -- monitor, otherwise just restore the profile.
+-    --
+-    -- If the bluetooth node is linked to a stream that is a monitor, its state
+-    -- will be 'running', so we cannot just rely on the state to know if we
+-    -- have to switch or not, we also need to check if the node is linked to
+-    -- a stream that is not a monitor.
+-    for bt_node in node_om:iterate {
+-        Constraint { "media.class", "matches", "Audio/Source" },
+-        Constraint { "device.id", "+" },
+-        Constraint { "bluez5.loopback", "=", "true", type = "pw" }
+-    } do
+-      local bt_node_state = bt_node["state"]
+-      local bt_dev_id = bt_node.properties ["device.id"]
+-
+-      if bt_node_state == "running" and
+-          isBluetoothLoopbackSourceNodeLinkedToStream (bt_node, node_om, link_om) then
+-        triggerSwitchDeviceToHeadsetProfile (source, bt_dev_id)
+-      else
+-        triggerRestoreProfile (source, bt_dev_id)
+-      end
+-    end
+-  end
+-}
+-
+-local link_added_hook = SimpleEventHook {
+-  name = "link-added@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "link-added" },
+-    },
+-  },
+-  execute = function (event)
+-    local source = event:get_source ()
+-    local node_om = source:call ("get-object-manager", "node")
+-    local link = event:get_subject ()
+-    local in_stream_id = link.properties["link.input.node"]
+-
+-    -- Only evaluate bluetooth profiles if a capture stream was linked
+-    local stream = node_om:lookup {
+-      Constraint { "media.class", "matches", "Stream/Input/Audio", type = "pw-global" },
+-      Constraint { "node.link-group", "-", type = "pw" },
+-      Constraint { "stream.monitor", "!", "true", type = "pw" },
+-      Constraint { "bluez5.loopback", "!", "true", type = "pw" },
+-      Constraint { "bound-id", "=", in_stream_id, type = "gobject" },
+-    }
+-    if stream ~= nil then
+-      capture_stream_links [link.id] = true
+-      source:call ("push-event", "evaluate-bluetooth-profiles", nil, nil)
+-    end
+-  end
+-}
+-
+-local link_removed_hook = SimpleEventHook {
+-  name = "link-removed@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "link-removed" },
+-    },
+-  },
+-  execute = function (event)
+-    local source = event:get_source ()
+-    local link = event:get_subject ()
+-
+-    -- Only evaluate bluetooth profiles if a capture stream was unlinked
+-    if capture_stream_links [link.id] then
+-      capture_stream_links [link.id] = nil
+-      source:call ("push-event", "evaluate-bluetooth-profiles", nil, nil)
+-    end
+-  end
+-}
+-
+-local state_changed_hook = SimpleEventHook {
+-  name = "bluez-loopback-state-changed@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "node-state-changed" },
+-      Constraint { "media.class", "matches", "Audio/Source" },
+-      Constraint { "device.id", "+" },
+-      Constraint { "bluez5.loopback", "=", "true", type = "pw" }
+-    },
+-  },
+-  execute = function (event)
+-    local source = event:get_source ()
+-    local node = event:get_subject ()
+-    local old_state = event:get_properties ()["event.subject.old-state"]
+-    local new_state = event:get_properties ()["event.subject.new-state"]
+-
+-    log:info (node, "state changed from '" .. old_state .. "' to '" .. new_state .. "'")
+-
+-    -- Dont evaluate if the state changed from idle to suspended
+-    if old_state == "idle" and new_state == "suspended" then
+-      return
+-    end
+-
+-    source:call ("push-event", "evaluate-bluetooth-profiles", nil, nil)
+-  end
+-}
+-
+-local node_added_hook = SimpleEventHook {
+-  name = "bluez-loopback-added@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "node-added" },
+-      Constraint { "media.class", "matches", "Audio/Source" },
+-      Constraint { "device.id", "+" },
+-      Constraint { "bluez5.loopback", "=", "true", type = "pw" }
+-    },
+-  },
+-  execute = function (event)
+-    local source = event:get_source ()
+-    source:call ("push-event", "evaluate-bluetooth-profiles", nil, nil)
+-  end
+-}
+-
+-local device_profile_changed_hook = SimpleEventHook {
+-  name = "bluez-profile-changed@autoswitch-bluetooth-profile",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "device-params-changed" },
+-      Constraint { "event.subject.param-id", "=", "Profile" },
+-      Constraint { "device.api", "=", "bluez5" },
+-    },
+-  },
+-  execute = function (event)
+-    local device = event:get_subject ()
+-
+-    -- Always save the current profile when it changes
+-    local cur_profile = getCurrentProfile (device)
+-    if cur_profile ~= nil then
+-      if isHeadsetProfile (device, cur_profile) then
+-        log:info (device, "Saving headset profile " .. cur_profile.name)
+-        saveHeadsetProfile (device, cur_profile.name, cur_profile.save)
+-      else
+-        log:info (device, "Saving non-headset profile " .. cur_profile.name)
+-        saveNonHeadsetProfile (device, cur_profile.name)
+-      end
+-    end
+-  end
+-}
+-
+-function evaluatePersistentStorage ()
+-  if Settings.get_boolean ("bluetooth.use-persistent-storage") and
+-      not persistent_storage_hooks_registered then
+-    state = State ("bluetooth-autoswitch")
+-    headset_profiles = state:load ()
+-    persistent_storage_hooks_registered = true
+-  elseif persistent_storage_hooks_registered then
+-    state = nil
+-    headset_profiles = {}
+-    persistent_storage_hooks_registered = false
+-  end
+-end
+-
+-function evaluateAutoswitch ()
+-  if Settings.get_boolean ("bluetooth.autoswitch-to-headset-profile") and
+-      not autoswitch_hooks_registered then
+-    capture_stream_links = {}
+-    restore_timeout_source = {}
+-    switch_timeout_source = {}
+-    switch_profile_hook:register ()
+-    restore_profile_hook:register ()
+-    evaluate_bluetooth_profiles_hook:register ()
+-    link_added_hook:register ()
+-    link_removed_hook:register ()
+-    state_changed_hook:register ()
+-    node_added_hook:register ()
+-    device_profile_changed_hook:register ()
+-    autoswitch_hooks_registered = true
+-  elseif autoswitch_hooks_registered then
+-    capture_stream_links = nil
+-    restore_timeout_source = nil
+-    switch_timeout_source = nil
+-    switch_profile_hook:remove ()
+-    restore_profile_hook:remove ()
+-    evaluate_bluetooth_profiles_hook:remove ()
+-    link_added_hook:remove ()
+-    link_removed_hook:remove ()
+-    state_changed_hook:remove ()
+-    node_added_hook:remove ()
+-    device_profile_changed_hook:remove ()
+-    autoswitch_hooks_registered = false
+-  end
+-end
+-
+-Settings.subscribe ("bluetooth.use-persistent-storage", function ()
+-  evaluatePersistentStorage ()
+-end)
+-evaluatePersistentStorage ()
+-
+-Settings.subscribe ("bluetooth.autoswitch-to-headset-profile", function ()
+-  evaluateAutoswitch ()
+-end)
+-evaluateAutoswitch ()
+diff --git a/src/scripts/device/find-preferred-profile.lua b/src/scripts/device/find-preferred-profile.lua
+index 36da1f2..86d3a19 100644
+--- a/src/scripts/device/find-preferred-profile.lua
++++ b/src/scripts/device/find-preferred-profile.lua
+@@ -25,25 +25,6 @@ function getRulesProfilePriorities (device)
+   return p_json:parse ()
+ end
+ 
+-function getPreferredBluetoothProfilePriorities (device)
+-  if device.properties["device.api"] ~= "bluez5" then
+-    return nil
+-  end
+-
+-  local preference = Settings.get_string ("bluetooth.profile-preference")
+-  if preference == "latency" then
+-    log:info (device, "using best latency profile")
+-    return { "a2dp-auto-prefer-latency" }
+-  elseif preference == "quality" then
+-    log:info (device, "using best quality profile")
+-    return { "a2dp-auto-prefer-quality" }
+-  end
+-
+-  log:warning (device, "invalid preference value '" .. preference ..
+-      "'. Defaulting to best quality profile")
+-  return { "a2dp-auto-prefer-quality" }
+-end
+-
+ SimpleEventHook {
+   name = "device/find-preferred-profile",
+   after = "device/find-stored-profile",
+@@ -64,12 +45,7 @@ SimpleEventHook {
+     local device = event:get_subject ()
+     local device_name = device.properties["device.name"] or ""
+ 
+-    -- Use device priority rules if any. Otherwise, get the preferred quality or
+-    -- latency priorities if BT device.
+     local priorities = getRulesProfilePriorities (device)
+-    if priorities == nil then
+-      priorities = getPreferredBluetoothProfilePriorities (device)
+-    end
+     if priorities == nil then
+       log:info (device, string.format (
+           "Preferred profile priorities not available for device '%s'",
+diff --git a/src/scripts/device/select-profile.lua b/src/scripts/device/select-profile.lua
+index 34e7d3e..c5e8ffa 100644
+--- a/src/scripts/device/select-profile.lua
++++ b/src/scripts/device/select-profile.lua
+@@ -33,20 +33,7 @@ SimpleEventHook {
+   },
+   execute = function (event)
+     local device = event:get_subject ()
+-    if device.properties ["device.api"] == "bluez5" and
+-        Settings.get_boolean ("bluetooth.autoswitch-to-headset-profile") then
+-      return
+-    end
+-
+     local source = event:get_source ()
+     source:call ("push-event", "select-profile", device, nil)
+   end
+ }:register()
+-
+-Settings.subscribe ("bluetooth.profile-preference", function ()
+-  source = source or Plugin.find ("standard-event-source")
+-  local device_om = source:call ("get-object-manager", "device")
+-  for device in device_om:iterate () do
+-    source:call ("push-event", "select-profile", device, nil)
+-  end
+-end)
+diff --git a/src/scripts/lib/monitor-utils.lua b/src/scripts/lib/monitor-utils.lua
+index 0528c0a..410d495 100644
+--- a/src/scripts/lib/monitor-utils.lua
++++ b/src/scripts/lib/monitor-utils.lua
+@@ -165,10 +165,4 @@ function mutils.register_cam_node (self, parent, id, factory, properties)
+   end)
+ end
+ 
+-function mutils.get_bluez_node_name (prefix, bt_address, dev_name, node_id)
+-  local name = prefix .. "." .. (bt_address or dev_name) .. "." .. tostring(node_id)
+-  -- sanitize name
+-  return name:gsub("([^%w_%-%.])", "_")
+-end
+-
+ return mutils
+diff --git a/src/scripts/linking/README.rst b/src/scripts/linking/README.rst
+index d7dbb42..c99d82d 100644
+--- a/src/scripts/linking/README.rst
++++ b/src/scripts/linking/README.rst
+@@ -54,16 +54,6 @@ processed while targets are being selected.
+      - linkable SI added
+      - links the new linkable immediately, without waiting for a full rescan, when it is a simple stream node
+ 
+-   * - linking/session-item-added
+-     - rescan.lua
+-     - session-item-added
+-     - re-enables rescanning (see linking/bluez-session-item-removed)
+-
+-   * - linking/bluez-session-item-removed
+-     - rescan.lua
+-     - session-item-removed on a ``bluez5`` device
+-     - disables rescanning for 2 seconds, to avoid audio being played on internal nodes while the BT device switches profiles
+-
+    * - linking/rescan-media-role-links
+      - rescan-media-role-links.lua
+      - link SI added, removed or metadata-changed
+diff --git a/src/scripts/linking/rescan.lua b/src/scripts/linking/rescan.lua
+index db59d6a..d065118 100644
+--- a/src/scripts/linking/rescan.lua
++++ b/src/scripts/linking/rescan.lua
+@@ -15,8 +15,6 @@ cutils = require ("common-utils")
+ futils = require ("filter-utils")
+ log = Log.open_topic ("s-linking")
+ handles = {}
+-handles.rescan_enabled = true
+-handles.timeout_source = nil
+ 
+ function checkFilter (si, om, handle_nonstreams)
+   -- always handle filters if handle_nonstreams is true, even if it is disabled
+@@ -237,64 +235,8 @@ SimpleEventHook {
+     },
+   },
+   execute = function (event)
+-    if handles.rescan_enabled then
+-      local source = event:get_source ()
+-      source:call ("schedule-rescan", "linking")
+-    end
+-  end
+-}:register ()
+-
+-SimpleEventHook {
+-  name = "linking/session-item-added",
+-  before = "linking/rescan-trigger",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "session-item-added" },
+-    },
+-  },
+-  execute = function (event)
+-    -- clear timeout source, if any
+-    if handles.timeout_source ~= nil then
+-      handles.timeout_source:destroy ()
+-      handles.timeout_source = nil
+-    end
+-
+-    -- Always enable rescan when any node is added
+-    handles.rescan_enabled = true
+-  end
+-}:register ()
+-
+--- Stop rescan for 2 seconds if BT item was removed. This avoids audio
+--- being played on internal nodes for a few seconds while the BT device is
+--- switching profiles.
+-SimpleEventHook {
+-  name = "linking/bluez-session-item-removed",
+-  before = "linking/rescan-trigger",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "session-item-removed" },
+-      Constraint { "device.api", "=", "bluez5" },
+-    },
+-  },
+-  execute = function (event)
+-    local si = event:get_subject ()
+     local source = event:get_source ()
+-
+-    -- clear timeout source, if any
+-    if handles.timeout_source ~= nil then
+-      handles.timeout_source:destroy ()
+-      handles.timeout_source = nil
+-    end
+-
+-    -- disable rescan
+-    handles.rescan_enabled = false
+-
+-    -- re-enable rescan after 2 seconds
+-    handles.timeout_source = Core.timeout_add (2000, function()
+-      handles.timeout_source = nil
+-      handles.rescan_enabled = true
+-      source:call ("schedule-rescan", "linking")
+-    end)
++    source:call ("schedule-rescan", "linking")
+   end
+ }:register ()
+ 
+diff --git a/src/scripts/monitors/bluez-midi.lua b/src/scripts/monitors/bluez-midi.lua
+deleted file mode 100644
+index 156b0d5..0000000
+--- a/src/scripts/monitors/bluez-midi.lua
++++ /dev/null
+@@ -1,162 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2022 Pauli Virtanen
+---    @author Pauli Virtanen
+---
+--- SPDX-License-Identifier: MIT
+-
+-cutils = require ("common-utils")
+-log = Log.open_topic ("s-monitors")
+-
+-defaults = {}
+-defaults.servers = { "bluez_midi.server" }
+-
+-config = {}
+-config.seat_monitoring = Core.test_feature ("monitor.bluez.seat-monitoring")
+-config.properties = Conf.get_section_as_properties ("monitor.bluez-midi.properties")
+-config.servers = Conf.get_section_as_array ("monitor.bluez-midi.servers", defaults.servers)
+-config.rules = Conf.get_section_as_json ("monitor.bluez-midi.rules", Json.Array {})
+-
+--- unique device/node name tables
+-node_names_table = nil
+-id_to_name_table = nil
+-
+-function setLatencyOffset(node, offset_msec)
+-  if not offset_msec then
+-    return
+-  end
+-
+-  local props = { "Spa:Pod:Object:Param:Props", "Props" }
+-  props.latencyOffsetNsec = tonumber(offset_msec) * 1000000
+-
+-  local param = Pod.Object(props)
+-  log:debug(param, "setting latency offset on " .. tostring(node))
+-  node:set_param("Props", param)
+-end
+-
+-function createNode(parent, id, type, factory, properties)
+-  properties["factory.name"] = factory
+-
+-  -- set the node description
+-  local desc = properties["node.description"]
+-  -- sanitize description, replace ':' with ' '
+-  properties["node.description"] = desc:gsub("(:)", " ")
+-
+-  -- set the node name
+-  local name =
+-      "bluez_midi." .. properties["api.bluez5.address"]
+-  -- sanitize name
+-  name = name:gsub("([^%w_%-%.])", "_")
+-  -- deduplicate nodes with the same name
+-  properties["node.name"] = name
+-  for counter = 2, 99, 1 do
+-    if node_names_table[properties["node.name"]] ~= true then
+-      node_names_table[properties["node.name"]] = true
+-      break
+-    end
+-    properties["node.name"] = name .. "." .. counter
+-  end
+-
+-  properties["api.glib.mainloop"] = "true"
+-
+-  -- apply properties from the rules in the configuration file
+-  properties = JsonUtils.match_rules_update_properties (config.rules, properties)
+-
+-  local latency_offset = properties["node.latency-offset-msec"]
+-  properties["node.latency-offset-msec"] = nil
+-
+-  -- create the node
+-  -- it doesn't necessarily need to be a local node,
+-  -- the other Bluetooth parts run in the local process,
+-  -- so it's consistent to have also this here
+-  local node = LocalNode("spa-node-factory", properties)
+-  node:activate(Feature.Proxy.BOUND)
+-  parent:store_managed_object(id, node)
+-  id_to_name_table[id] = properties["node.name"]
+-  setLatencyOffset(node, latency_offset)
+-end
+-
+-function createMonitor()
+-  local monitor_props = {}
+-  for k, v in pairs(config.properties or Properties()) do
+-    monitor_props[k] = v
+-  end
+-
+-  monitor_props["api.glib.mainloop"] = "true"
+-
+-  local monitor = SpaDevice("api.bluez5.midi.enum", monitor_props)
+-  if monitor then
+-    monitor:connect("create-object", createNode)
+-    monitor:connect("object-removed", function (parent, id)
+-        node_names_table[id_to_name_table[id]] = nil
+-        id_to_name_table[id] = nil
+-    end)
+-  else
+-    log:notice("PipeWire's BlueZ MIDI SPA missing or broken. Bluetooth not supported.")
+-    return nil
+-  end
+-
+-  -- reset the name tables to make sure names are recycled
+-  node_names_table = {}
+-  id_to_name_table = {}
+-
+-  monitor:activate(Feature.SpaDevice.ENABLED)
+-  return monitor
+-end
+-
+-function createServers()
+-  local servers = {}
+-  local i = 1
+-
+-  for k, v in pairs(config.servers) do
+-    local node_props = {
+-      ["node.name"] = v,
+-      ["node.description"] = string.format(I18n.gettext("BLE MIDI %d"), i),
+-      ["api.bluez5.role"] = "server",
+-      ["factory.name"] = "api.bluez5.midi.node",
+-      ["api.glib.mainloop"] = "true",
+-    }
+-    node_props = JsonUtils.match_rules_update_properties (config.rules, node_props)
+-
+-    local latency_offset = node_props["node.latency-offset-msec"]
+-    node_props["node.latency-offset-msec"] = nil
+-
+-    local node = LocalNode("spa-node-factory", node_props)
+-    if node then
+-      node:activate(Feature.Proxy.BOUND)
+-      table.insert(servers, node)
+-      setLatencyOffset(node, latency_offset)
+-    else
+-      log:notice("Failed to create BLE MIDI server.")
+-    end
+-    i = i + 1
+-  end
+-
+-  return servers
+-end
+-
+-if config.seat_monitoring then
+-  logind_plugin = Plugin.find("logind")
+-end
+-if logind_plugin then
+-  -- if logind support is enabled, activate
+-  -- the monitor only when the seat is active
+-  function startStopMonitor(seat_state)
+-    log:info(logind_plugin, "Seat state changed: " .. seat_state)
+-
+-    if seat_state == "active" then
+-      monitor = createMonitor()
+-      servers = createServers()
+-    elseif monitor then
+-      monitor:deactivate(Feature.SpaDevice.ENABLED)
+-      monitor = nil
+-      servers = nil
+-    end
+-  end
+-
+-  logind_plugin:connect("state-changed", function(p, s) startStopMonitor(s) end)
+-  startStopMonitor(logind_plugin:call("get-state"))
+-else
+-  monitor = createMonitor()
+-  servers = createServers()
+-end
+diff --git a/src/scripts/monitors/bluez/create-device.lua b/src/scripts/monitors/bluez/create-device.lua
+deleted file mode 100644
+index af2cf7f..0000000
+--- a/src/scripts/monitors/bluez/create-device.lua
++++ /dev/null
+@@ -1,110 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-AsyncEventHook {
+-  name = "monitor/bluez/create-device",
+-  after = "monitor/bluez/name-device",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device" },
+-    },
+-  },
+-  steps = {
+-    start = {
+-      next = "none",
+-      execute = function(event, transition)
+-        local source = event:get_source ()
+-        local properties = event:get_data ("device-properties")
+-        local factory = event:get_data ("factory")
+-        local monitor = event:get_subject ()
+-        local id = event:get_data ("device-sub-id")
+-
+-        log:info (monitor, "Handling device " .. properties["device.name"])
+-
+-        -- Don't do anything if this device is disabled
+-        if properties:get_boolean ("device.disabled") then
+-          log:notice ("Bluez device " .. properties["device.name"] .. " disabled")
+-          transition:advance ()
+-          event:stop_processing ()
+-          return
+-        end
+-
+-        -- Create the BT device
+-        local device = SpaDevice (factory, properties)
+-        if device == nil then
+-          log:warning ("Failed to create '" .. factory .. "' device")
+-          transition:advance ()
+-          event:stop_processing ()
+-          return
+-        end
+-
+-        -- Handle create-object signal
+-        device:connect ("create-object", function (parent, id, type, factory, properties)
+-          local e = source:call ("create-event", "create-bluez-device-node", parent, nil)
+-          e:set_data ("node-properties", properties)
+-          e:set_data ("type", type)
+-          e:set_data ("factory", factory)
+-          e:set_data ("node-sub-id", id)
+-          EventDispatcher.push_event (e)
+-        end)
+-
+-        -- Handle object-removed signal
+-        device:connect ("object-removed", function (parent, id)
+-          local e = source:call ("create-event", "remove-bluez-device-node", parent, nil)
+-          e:set_data ("node-sub-id", id)
+-          EventDispatcher.push_event (e)
+-        end)
+-
+-        -- Handle params-changed signal
+-        device:connect ("params-changed", function (spa_device, param_name)
+-          if param_name == "Profile" or param_name == "EnumProfile" then
+-            local e = source:call ("create-event", "create-bluez-device-loopback-node", spa_device, nil)
+-            EventDispatcher.push_event (e)
+-          end
+-        end)
+-
+-        log:info (monitor, string.format("%d, %s (%s): %s",
+-            id, properties["device.description"],
+-            properties["api.bluez5.address"],
+-            properties["api.bluez5.connection"]))
+-
+-        -- Deactivate the device and stop processing if connection is not 'connected'
+-        if properties["api.bluez5.connection"] ~= "connected" then
+-          log:info (monitor, "Not activating device " .. properties["device.name"])
+-          device:deactivate(Features.ALL)
+-          transition:advance ()
+-          event:stop_processing ()
+-          return
+-        end
+-
+-        -- Activate the device
+-        device:activate(Features.ALL, function (d, e)
+-          if e ~= nil then
+-            transition:return_error ("Failed to activate SPA device " ..
+-                d:get_property ("device.name") .. ": " .. e)
+-            event:stop_processing ()
+-            return
+-          end
+-
+-          log:info (monitor, "Activated SPA device " .. properties["device.name"])
+-
+-          -- Store the device as managed object in the monitor
+-          monitor:store_managed_object (id, device)
+-
+-          -- Push event to create loopbacks if needed*/
+-          local e = source:call ("create-event", "create-bluez-device-loopback-node", device, nil)
+-          EventDispatcher.push_event (e)
+-
+-          -- Advance
+-          transition:advance ()
+-        end)
+-      end
+-    }
+-  }
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/create-loopback-node.lua b/src/scripts/monitors/bluez/create-loopback-node.lua
+deleted file mode 100644
+index 70f9cc1..0000000
+--- a/src/scripts/monitors/bluez/create-loopback-node.lua
++++ /dev/null
+@@ -1,126 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-cutils = require ("common-utils")
+-mutils = require ("monitor-utils")
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-LOOPBACK_SOURCE_ID = 128
+-DEVICE_SOURCE_ID = 0
+-
+-function CreateDeviceLoopbackSource (dev_props, dev_id)
+-  local dev_name = dev_props["api.bluez5.address"] or dev_props["device.name"]
+-  local dec_desc = dev_props["device.description"] or dev_props["device.name"]
+-      or dev_props["device.nick"] or dev_props["device.alias"] or "bluetooth-device"
+-  local target_object = mutils.get_bluez_node_name ("bluez_input",
+-      dev_props["api.bluez5.address"], dev_props["device.name"], DEVICE_SOURCE_ID)
+-
+-  -- sanitize description, replace ':' with ' '
+-  dec_desc = dec_desc:gsub("(:)", " ")
+-
+-  log:info("create SCO source loopback node: " .. dev_name)
+-
+-  local args = Json.Object {
+-    ["capture.props"] = Json.Object {
+-      ["node.name"] = string.format ("bluez_capture_internal.%s", dev_name),
+-      ["media.class"] = "Stream/Input/Audio/Internal",
+-      ["node.description"] =
+-          string.format ("Bluetooth internal capture stream for %s", dec_desc),
+-      ["audio.channels"] = 1,
+-      ["audio.position"] = "[MONO]",
+-      ["bluez5.loopback"] = true,
+-      ["stream.dont-remix"] = true,
+-      ["node.passive"] = true,
+-      ["node.dont-fallback"] = true,
+-      ["node.linger"] = true,
+-      ["state.restore-props"] = false,
+-      ["target.object"] = target_object,
+-    },
+-    ["playback.props"] = Json.Object {
+-      ["node.name"] = string.format ("bluez_input.%s", dev_name),
+-      ["node.description"] = string.format ("%s", dec_desc),
+-      ["node.virtual"] = false,
+-      ["audio.position"] = "[MONO]",
+-      ["media.class"] = "Audio/Source",
+-      ["device.id"] = dev_id,
+-      ["card.profile.device"] = DEVICE_SOURCE_ID,
+-      ["device.routes"] = "1",
+-      ["priority.session"] = 2010,
+-      ["bluez5.loopback"] = true,
+-    }
+-  }
+-  return LocalModule("libpipewire-module-loopback", args:get_data(), {})
+-end
+-
+-SimpleEventHook {
+-  name = "monitor/bluez/create-loopback-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device-loopback-node" },
+-    },
+-  },
+-  execute = function (event)
+-    local source = event:get_source ()
+-    local spa_device = event:get_subject ()
+-
+-    local device_id = spa_device["bound-id"]
+-    local props = spa_device.properties
+-    local device_name = props ["device.name"]
+-
+-    log:debug (spa_device, "Checking loopbacks on BT device: " .. device_name)
+-
+-    -- Check if the device supports headset profile
+-    local has_headset_profile = false
+-    for p in spa_device:iterate_params("EnumProfile") do
+-      local profile = cutils.parseParam (p, "EnumProfile")
+-      if profile.name:find ("headset") then
+-        has_headset_profile = true
+-      end
+-    end
+-
+-    if has_headset_profile then
+-      -- Always create the source loopback device if autoswitch is enabled.
+-      -- Otherwise, only create the source loopback device if the current profile
+-      -- is headset, and destroy the source loopback deivce if the current profile
+-      -- is A2DP.
+-      if Settings.get_boolean ("bluetooth.autoswitch-to-headset-profile") then
+-        -- Create source loopback
+-        local source_loopback = spa_device:get_managed_object (LOOPBACK_SOURCE_ID)
+-        if source_loopback == nil and has_headset_profile then
+-          source_loopback = CreateDeviceLoopbackSource (props, device_id)
+-          spa_device:store_managed_object(LOOPBACK_SOURCE_ID, source_loopback)
+-          log:debug (spa_device, "created loopback source for BT device: " .. device_name)
+-        end
+-      else
+-        -- Check if current profile is headset
+-        local is_current_profile_headset = false
+-        for p in spa_device:iterate_params("Profile") do
+-          local profile = cutils.parseParam (p, "Profile")
+-          if profile.name:find ("headset") then
+-            is_current_profile_headset = true
+-          end
+-          break
+-        end
+-
+-        if is_current_profile_headset then
+-          -- Create source loopback
+-          local source_loopback = spa_device:get_managed_object (LOOPBACK_SOURCE_ID)
+-          if source_loopback == nil and has_headset_profile then
+-            source_loopback = CreateDeviceLoopbackSource (props, device_id)
+-            spa_device:store_managed_object(LOOPBACK_SOURCE_ID, source_loopback)
+-            log:debug (spa_device, "created loopback source for BT device: " .. device_name)
+-          end
+-        else
+-          -- Destroy source loopback
+-          spa_device:store_managed_object(LOOPBACK_SOURCE_ID, nil)
+-          log:debug (spa_device, "destroyed loopback source for BT device: " .. device_name)
+-        end
+-      end
+-    end
+-  end
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/create-node.lua b/src/scripts/monitors/bluez/create-node.lua
+deleted file mode 100644
+index 6e6504b..0000000
+--- a/src/scripts/monitors/bluez/create-node.lua
++++ /dev/null
+@@ -1,62 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-AsyncEventHook {
+-  name = "monitor/bluez/create-node",
+-  after = "monitor/bluez/create-set-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device-node" },
+-    },
+-  },
+-  steps = {
+-    start = {
+-      next = "none",
+-      execute = function (event, transition)
+-        local properties = event:get_data ("node-properties")
+-        local parent = event:get_subject ()
+-        local id = event:get_data ("node-sub-id")
+-        local type = event:get_data ("type")
+-        local factory = event:get_data ("factory")
+-
+-        log:info (parent, "Handling node " .. properties["node.name"])
+-
+-        -- Set sink/source specific properties
+-        if factory == "api.bluez5.sco.source" or
+-            (factory == "api.bluez5.a2dp.source" and properties:get_boolean ("api.bluez5.a2dp-duplex")) then
+-          properties["bluez5.loopback"] = false
+-          if properties["api.bluez5.profile"] ~= "headset-audio-gateway" then
+-            properties["api.bluez5.internal"] = true
+-          end
+-        end
+-
+-        log:info("Create node: " .. properties["node.name"] .. ": " .. factory .. " " .. tostring (id))
+-
+-        -- Create the node
+-        local node = LocalNode("adapter", properties)
+-        if node == nil then
+-          transition:return_error ("Failed to create BT node " ..
+-              tostring (properties ["node.name"]))
+-          return
+-        end
+-
+-        node:activate(Features.ALL, function (n, e)
+-          if e ~= nil then
+-            transition:return_error ("Failed to activate BT node " ..
+-                n:get_property ("node.name") .. ": " .. e)
+-            return
+-          end
+-
+-          parent:store_managed_object(id, node)
+-          transition:advance ()
+-        end)
+-      end
+-    },
+-  }
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/create-offload-node.lua b/src/scripts/monitors/bluez/create-offload-node.lua
+deleted file mode 100644
+index d9d3680..0000000
+--- a/src/scripts/monitors/bluez/create-offload-node.lua
++++ /dev/null
+@@ -1,167 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-config = {}
+-config.properties = Conf.get_section_as_properties ("monitor.bluez.properties")
+-
+-function createOffloadScoNode(parent, id, type, factory, properties)
+-  local dev_props = parent.properties
+-
+-  local args = {
+-    ["audio.channels"] = 1,
+-    ["audio.position"] = "[MONO]",
+-  }
+-
+-  local desc =
+-      dev_props["device.description"]
+-      or dev_props["device.name"]
+-      or dev_props["device.nick"]
+-      or dev_props["device.alias"]
+-      or "bluetooth-device"
+-  -- sanitize description, replace ':' with ' '
+-  args["node.description"] = desc:gsub("(:)", " ")
+-
+-  if factory:find("sink") then
+-    local capture_args = {
+-      ["device.id"] = parent["bound-id"],
+-      ["media.class"] = "Audio/Sink",
+-      ["node.pause-on-idle"] = false,
+-    }
+-    for k, v in pairs(properties) do
+-      capture_args[k] = v
+-    end
+-
+-    local name = "bluez_output" .. "." .. (properties["api.bluez5.address"] or dev_props["device.name"]) .. "." .. tostring(id)
+-    args["node.name"] = name:gsub("([^%w_%-%.])", "_")
+-    args["capture.props"] = Json.Object(capture_args)
+-    args["playback.props"] = Json.Object {
+-      ["node.passive"] = true,
+-      ["node.pause-on-idle"] = false,
+-      ["state.restore-props"] = false,
+-    }
+-  elseif factory:find("source") then
+-    local playback_args = {
+-      ["device.id"] = parent["bound-id"],
+-      ["media.class"] = "Audio/Source",
+-      ["node.pause-on-idle"] = false,
+-    }
+-    for k, v in pairs(properties) do
+-      playback_args[k] = v
+-    end
+-
+-    local name = "bluez_input" .. "." .. (properties["api.bluez5.address"] or dev_props["device.name"]) .. "." .. tostring(id)
+-    args["node.name"] = name:gsub("([^%w_%-%.])", "_")
+-    args["capture.props"] = Json.Object {
+-      ["node.passive"] = true,
+-      ["node.pause-on-idle"] = false,
+-      ["state.restore-props"] = false,
+-    }
+-    args["playback.props"] = Json.Object(playback_args)
+-  else
+-    log:warning(parent, "Unsupported factory: " .. factory)
+-    return false
+-  end
+-
+-  -- Transform 'args' to a json object here
+-  local args_json = Json.Object(args)
+-
+-  -- and get the final JSON as a string from the json object
+-  local args_string = args_json:get_data()
+-
+-  local loopback_properties = {}
+-
+-  local loopback = LocalModule("libpipewire-module-loopback", args_string, loopback_properties)
+-  parent:store_managed_object(id, loopback)
+-  return true
+-end
+-
+-AsyncEventHook {
+-  name = "monitor/bluez/create-offload-node",
+-  after = "monitor/bluez/name-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device-node" },
+-    },
+-  },
+-  steps = {
+-    start = {
+-      next = "none",
+-      execute = function (event, transition)
+-        local properties = event:get_data ("node-properties")
+-        local parent = event:get_subject ()
+-        local id = event:get_data ("node-sub-id")
+-        local type = event:get_data ("type")
+-        local factory = event:get_data ("factory")
+-        local node_name = properties["node.name"]
+-
+-        log:info (parent, "Handling node " .. node_name)
+-
+-        -- Bypass the hook if offload SCO configuration property is not enabled
+-        if not config.properties:get_boolean ("bluez5.hw-offload-sco") or
+-            not factory:find("sco") then
+-          transition:advance ()
+-          return
+-        end
+-
+-        -- Create the offload SCO loopback nodes module
+-        if not createOffloadScoNode(parent, id, type, factory, properties) then
+-          transition:return_error (
+-              "Failed to create Offload SCO node for BT node " .. node_name)
+-          event:stop_processing ()
+-          return
+-        end
+-
+-        -- FIXME: We should check and wait for the actual offload loopback nodes
+-        -- to be created before finishing
+-        Core.sync (function ()
+-          log:info (parent, "Created Offload node for BT node " .. node_name)
+-          transition:advance ()
+-          event:stop_processing ()
+-        end)
+-      end
+-    },
+-  }
+-}:register ()
+-
+-function setOffloadActive(device, value)
+-  local pod = Pod.Object {
+-    "Spa:Pod:Object:Param:Props", "Props", bluetoothOffloadActive = value
+-  }
+-  device:set_params("Props", pod)
+-end
+-
+--- Set Offload active hook
+-SimpleEventHook {
+-  name = "monitor/bluez/set-offload-active",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "node-state-changed" },
+-      Constraint { "node.name", "#", "*.bluez_*put*" },
+-      Constraint { "device.id", "+" },
+-    },
+-  },
+-  execute = function(event)
+-    local source = event:get_source ()
+-    local devices_om = source:call ("get-object-manager", "device")
+-    local node = event:get_subject ()
+-    local device_id = node.properties:get_int ("device.id")
+-    local new_state = event:get_properties ()["event.subject.new-state"]
+-
+-    for d in devices_om:iterate {
+-      type = "device",
+-      Constraint { "object.id", "=", device_id}
+-    } do
+-      if new_state == "running" then
+-        setOffloadActive (d, true)
+-      else
+-        setOffloadActive (d, false)
+-      end
+-    end
+-  end
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/create-set-node.lua b/src/scripts/monitors/bluez/create-set-node.lua
+deleted file mode 100644
+index c774c48..0000000
+--- a/src/scripts/monitors/bluez/create-set-node.lua
++++ /dev/null
+@@ -1,116 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-COMBINE_OFFSET = 64
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-function createSetNode(parent, id, type, factory, properties)
+-  local args = {}
+-  local target_class
+-  local stream_class
+-  local rules = {}
+-  local members_json = Json.Raw (properties["api.bluez5.set.members"])
+-  local channels_json = Json.Raw (properties["api.bluez5.set.channels"])
+-  local members = members_json:parse ()
+-  local channels = channels_json:parse ()
+-
+-  if properties["media.class"] == "Audio/Sink" then
+-    args["combine.mode"] = "sink"
+-    target_class = "Audio/Sink/Internal"
+-    stream_class = "Stream/Output/Audio/Internal"
+-  else
+-    args["combine.mode"] = "source"
+-    target_class = "Audio/Source/Internal"
+-    stream_class = "Stream/Input/Audio/Internal"
+-  end
+-
+-  log:info("Device set: " .. properties["node.name"])
+-
+-  for _, member in pairs(members) do
+-    log:info("Device set member:" .. member["object.path"])
+-    table.insert(rules,
+-      Json.Object {
+-        ["matches"] = Json.Array {
+-          Json.Object {
+-            ["object.path"] = member["object.path"],
+-            ["media.class"] = target_class,
+-          },
+-        },
+-        ["actions"] = Json.Object {
+-          ["create-stream"] = Json.Object {
+-            ["media.class"] = stream_class,
+-            ["audio.position"] = Json.Array (member["channels"]),
+-            ["state.restore-props"] = false,
+-          }
+-        },
+-      }
+-    )
+-  end
+-
+-  local combine_props = properties:parse ()
+-  combine_props["node.virtual"] = false
+-  combine_props["device.api"] = "bluez5"
+-  combine_props["api.bluez5.set.members"] = nil
+-  combine_props["api.bluez5.set.channels"] = nil
+-  combine_props["api.bluez5.set.leader"] = true
+-  combine_props["audio.position"] = Json.Array (channels)
+-
+-  args["combine.props"] = Json.Object (combine_props)
+-  args["stream.props"] = Json.Object {}
+-  args["stream.rules"] = Json.Array (rules)
+-
+-  local args_json = Json.Object(args)
+-  local args_string = args_json:get_data()
+-  local combine_properties = {}
+-  log:info("Device set node: " .. args_string)
+-  return LocalModule("libpipewire-module-combine-stream", args_string, combine_properties)
+-end
+-
+-AsyncEventHook {
+-  name = "monitor/bluez/create-set-node",
+-  after = "monitor/bluez/create-offload-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device-node" },
+-    },
+-  },
+-  steps = {
+-    start = {
+-      next = "none",
+-      execute = function (event, transition)
+-        local properties = event:get_data ("node-properties")
+-        local parent = event:get_subject ()
+-        local id = event:get_data ("node-sub-id")
+-        local type = event:get_data ("type")
+-        local factory = event:get_data ("factory")
+-        local node_name = properties["node.name"]
+-
+-        log:info (parent, "Handling node " .. node_name)
+-
+-        -- Bypass the hook if 'api.bluez5.set.leader' property is not set
+-        if properties["api.bluez5.set.leader"] == nil then
+-          transition:advance ()
+-          return
+-        end
+-
+-        -- Create the combine set node
+-        local combine = createSetNode(parent, id, type, factory, properties)
+-        parent:store_managed_object (id + COMBINE_OFFSET, combine)
+-        parent:set_managed_pending (id)
+-
+-        -- FIXME: We should check and wait for the actual set node to be created
+-        -- before finishing
+-        Core.sync (function ()
+-          log:info (parent, "Created Set node for BT node " .. node_name)
+-          transition:advance ()
+-          event:stop_processing ()
+-        end)
+-      end
+-    },
+-  }
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/enumerate-device.lua b/src/scripts/monitors/bluez/enumerate-device.lua
+deleted file mode 100644
+index eb5badc..0000000
+--- a/src/scripts/monitors/bluez/enumerate-device.lua
++++ /dev/null
+@@ -1,141 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-config = {}
+-config.seat_monitoring = Core.test_feature ("monitor.bluez.seat-monitoring")
+-config.properties = Conf.get_section_as_properties ("monitor.bluez.properties")
+-
+--- This is not a setting, it must always be enabled
+-config.properties["api.bluez5.connection-info"] = true
+-
+-source = nil
+-logind_plugin = nil
+-monitor = nil
+-
+-function createBluezDevice (parent, id, type, factory, properties)
+-  source = source or Plugin.find ("standard-event-source")
+-
+-  local e = source:call ("create-event", "create-bluez-device", parent, nil)
+-  e:set_data ("device-properties", properties)
+-  e:set_data ("factory", factory)
+-  e:set_data ("device-sub-id", id)
+-
+-  log:info ("BT device " .. tostring (id) .. " connected")
+-  EventDispatcher.push_event (e)
+-end
+-
+-function removeBluezDevice(parent, id)
+-  source = source or Plugin.find ("standard-event-source")
+-
+-  local e = source:call ("create-event", "remove-bluez-device", parent, nil)
+-  e:set_data ("device-sub-id", id)
+-
+-  log:info ("BT device " .. tostring (id) .. " disconnected")
+-  EventDispatcher.push_event (e)
+-end
+-
+-function createMonitor()
+-  -- Create monitor
+-  local m = SpaDevice("api.bluez5.enum.dbus", config.properties)
+-  if m == nil then
+-    log:notice("PipeWire's BlueZ SPA plugin is missing or broken. " ..
+-        "Bluetooth devices will not be supported.")
+-    return nil
+-  end
+-
+-  -- Handle signals
+-  m:connect("create-object", createBluezDevice)
+-  m:connect("object-removed", removeBluezDevice)
+-
+-  -- Activate monitor
+-  m:activate (Feature.SpaDevice.ENABLED, function (_, e)
+-    if e ~= nil then
+-      log:warning ("Failed to activate BT monitor: " .. e)
+-    else
+-      log:info ("Created BT monitor")
+-    end
+-  end)
+-  return m
+-end
+-
+--- Find logind plugin if seat-monitoring is enabled
+-if config.seat_monitoring then
+-  logind_plugin = Plugin.find("logind")
+-end
+-
+--- If logind plugin was found, only activate the monitor if the seat is active.
+--- Otherwise just activate the monitor
+-if logind_plugin then
+-  function startStopMonitor(seat_state)
+-    log:info(logind_plugin, "Seat state changed: " .. seat_state)
+-    if seat_state == "active" then
+-      monitor = createMonitor()
+-    elseif monitor then
+-      monitor:deactivate(Feature.SpaDevice.ENABLED)
+-      monitor = nil
+-    end
+-  end
+-
+-  logind_plugin:connect("state-changed", function(p, s) startStopMonitor(s) end)
+-  startStopMonitor(logind_plugin:call("get-state"))
+-else
+-  monitor = createMonitor()
+-end
+-
+--- Store set nodes to their respective SPA device
+-SimpleEventHook {
+-  name = "monitor/bluez/select-device-for-set-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "node-added" },
+-      Constraint { "api.bluez5.set.leader", "+", type = "pw" },
+-    },
+-  },
+-  execute = function(event)
+-    local source = event:get_source ()
+-    local devices_om = source:call ("get-object-manager", "device")
+-    local node = event:get_subject ()
+-    local node_bound_id = node["bound-id"]
+-    local device_id = node.properties:get_int ("device.id")
+-
+-    log:info ("Device set node added: " .. tostring (node_bound_id))
+-
+-    for device in devices_om:iterate {
+-      type = "device",
+-      Constraint { "object.id", "=", device_id }
+-    } do
+-      local spa_device_id = device.properties:get_int ("spa.object.id")
+-      if spa_device_id == nil then
+-        goto next_device
+-      end
+-
+-      local spa_device = monitor:get_managed_object (spa_device_id)
+-      if spa_device == nil then
+-        goto next_device
+-      end
+-
+-      local id = node.properties:get_int ("card.profile.device")
+-      if id ~= nil then
+-        log:info (".. assign to device: " .. tostring (device["bound-id"]) .. " node " .. tostring (id))
+-        spa_device:store_managed_object (id, node)
+-      end
+-
+-      ::next_device::
+-    end
+-  end
+-}:register ()
+-
+--- Check BT loopbacks every time the autoswitch setting changes
+-Settings.subscribe ("bluetooth.autoswitch-to-headset-profile", function ()
+-  source = source or Plugin.find ("standard-event-source")
+-  for spa_device in monitor:iterate_managed_objects() do
+-    local e = source:call ("create-event", "create-bluez-device-loopback-node", spa_device, nil)
+-    EventDispatcher.push_event (e)
+-  end
+-end)
+diff --git a/src/scripts/monitors/bluez/name-device.lua b/src/scripts/monitors/bluez/name-device.lua
+deleted file mode 100644
+index 5298c4e..0000000
+--- a/src/scripts/monitors/bluez/name-device.lua
++++ /dev/null
+@@ -1,69 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-config = {}
+-config.rules = Conf.get_section_as_json ("monitor.bluez.rules", Json.Array {})
+-
+-SimpleEventHook {
+-  name = "monitor/bluez/name-device",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device" },
+-    },
+-  },
+-  execute = function(event)
+-    local properties = event:get_data ("device-properties")
+-    local parent = event:get_subject ()
+-    local id = event:get_data ("device-sub-id")
+-
+-    log:info (parent, "Handling device " .. tostring (id))
+-
+-    -- ensure a proper device name
+-    local name =
+-        (properties["device.name"] or
+-         properties["api.bluez5.address"] or
+-         properties["device.description"] or
+-         tostring(id)):gsub("([^%w_%-%.])", "_")
+-    if not name:find("^bluez_card%.", 1) then
+-      name = "bluez_card." .. name
+-    end
+-    properties["device.name"] = name
+-
+-    -- set the icon name
+-    if not properties["device.icon-name"] then
+-      local icon = nil
+-      local icon_map = {
+-        -- form factor -> icon
+-        ["microphone"] = "audio-input-microphone",
+-        ["webcam"] = "camera-web",
+-        ["handset"] = "phone",
+-        ["portable"] = "multimedia-player",
+-        ["tv"] = "video-display",
+-        ["headset"] = "audio-headset",
+-        ["headphone"] = "audio-headphones",
+-        ["speaker"] = "audio-speakers",
+-        ["hands-free"] = "audio-handsfree",
+-      }
+-      local f = properties["device.form-factor"]
+-      local b = properties["device.bus"]
+-
+-      icon = icon_map[f] or "audio-card"
+-      properties["device.icon-name"] = icon .. (b and ("-" .. b) or "")
+-    end
+-
+-    -- initial profile is to be set by policy-device-profile.lua, not spa-bluez5
+-    properties["bluez5.profile"] = "off"
+-    properties["spa.object.id"] = id
+-
+-    -- apply properties from rules defined in JSON .conf file
+-    properties = JsonUtils.match_rules_update_properties (config.rules, properties)
+-
+-    event:set_data ("device-properties", properties)
+-  end
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/name-node.lua b/src/scripts/monitors/bluez/name-node.lua
+deleted file mode 100644
+index e651efe..0000000
+--- a/src/scripts/monitors/bluez/name-node.lua
++++ /dev/null
+@@ -1,76 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-mutils = require ("monitor-utils")
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-config = {}
+-config.rules = Conf.get_section_as_json ("monitor.bluez.rules", Json.Array {})
+-
+-SimpleEventHook {
+-  name = "monitor/bluez/name-node",
+-  before = "monitor/bluez/create-offload-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "create-bluez-device-node" },
+-    },
+-  },
+-  execute = function(event)
+-    local properties = event:get_data ("node-properties")
+-    local parent = event:get_subject ()
+-    local parent_id = parent["bound-id"]
+-    local dev_props = parent.properties
+-    local factory = event:get_data ("factory")
+-    local id = event:get_data ("node-sub-id")
+-
+-    log:info (parent, "Handling node " .. tostring (id))
+-
+-    -- set the device id and spa factory name; REQUIRED, do not change
+-    properties["device.id"] = parent_id
+-    properties["factory.name"] = factory
+-    properties["spa.object.id"] = id
+-
+-    -- set the default pause-on-idle setting
+-    properties["node.pause-on-idle"] = false
+-
+-    -- set the node description
+-    local desc =
+-        dev_props["device.description"]
+-        or dev_props["device.name"]
+-        or dev_props["device.nick"]
+-        or dev_props["device.alias"]
+-        or "bluetooth-device"
+-    -- sanitize description, replace ':' with ' '
+-    properties["node.description"] = desc:gsub("(:)", " ")
+-
+-    -- set the node name
+-    local name_prefix = ((factory:find("sink") and "bluez_output") or
+-         (factory:find("source") and "bluez_input" or factory))
+-    properties["node.name"] = mutils.get_bluez_node_name (name_prefix,
+-        properties["api.bluez5.address"], dev_props["device.name"], id)
+-
+-    -- set priority
+-    if not properties["priority.driver"] then
+-      local priority = factory:find("source") and 2010 or 1010
+-      properties["priority.driver"] = priority
+-      properties["priority.session"] = priority
+-    end
+-
+-    -- autoconnect if it's a stream
+-    if properties["api.bluez5.profile"] == "headset-audio-gateway" or
+-       properties["api.bluez5.profile"] == "bap-sink" or
+-       factory:find("a2dp.source") or factory:find("media.source") then
+-      properties["node.autoconnect"] = true
+-    end
+-
+-    -- apply properties from the rules in the configuration file
+-    properties = JsonUtils.match_rules_update_properties (config.rules, properties)
+-
+-    event:set_data ("node-properties", properties)
+-  end
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/remove-device.lua b/src/scripts/monitors/bluez/remove-device.lua
+deleted file mode 100644
+index d231c18..0000000
+--- a/src/scripts/monitors/bluez/remove-device.lua
++++ /dev/null
+@@ -1,22 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-SimpleEventHook {
+-  name = "monitor/bluez/remove-device",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "remove-bluez-device" },
+-    },
+-  },
+-  execute = function(event)
+-    local id = event:get_data ("device-sub-id")
+-
+-    log:debug("Remove device: " .. tostring (id))
+-  end
+-}:register ()
+diff --git a/src/scripts/monitors/bluez/remove-node.lua b/src/scripts/monitors/bluez/remove-node.lua
+deleted file mode 100644
+index fae8f6e..0000000
+--- a/src/scripts/monitors/bluez/remove-node.lua
++++ /dev/null
+@@ -1,31 +0,0 @@
+--- WirePlumber
+---
+--- Copyright © 2026 Collabora Ltd.
+---    @author Julian Bouzas <julian.bouzas@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+-
+-COMBINE_OFFSET = 64
+-
+-log = Log.open_topic ("s-monitors-bluez")
+-
+-SimpleEventHook {
+-  name = "monitor/bluez/remove-node",
+-  interests = {
+-    EventInterest {
+-      Constraint { "event.type", "=", "remove-bluez-device-node" },
+-    },
+-  },
+-  execute = function(event)
+-    local parent = event:get_subject ()
+-    local id = event:get_data ("node-sub-id")
+-
+-    local dev_props = parent.properties
+-    local parent_spa_id = dev_props:get_int ("spa.object.id")
+-
+-    log:debug("Remove node: " .. tostring (id))
+-
+-     -- Clear also the device set module, if any
+-    parent:store_managed_object(id + COMBINE_OFFSET, nil)
+-  end
+-}:register ()
+diff --git a/src/scripts/node/create-item.lua b/src/scripts/node/create-item.lua
+index 1fd09db..055af9a 100644
+--- a/src/scripts/node/create-item.lua
++++ b/src/scripts/node/create-item.lua
+@@ -42,7 +42,8 @@ function configProperties (node)
+   properties ["item.features.control-port"] =
+       Settings.get_boolean ("node.features.audio.control-port")
+   properties ["item.features.mono"] =
+-      (factory_name == "api.alsa.pcm.sink" or factory_name == "api.bluez5.a2dp.sink") and
++      (factory_name == "api.alsa.pcm.sink" or
++       (properties ["device.api"] == "floss" and media_class == "Audio/Sink")) and
+       Settings.get_boolean ("node.features.audio.mono")
+   properties ["node.id"] = node ["bound-id"]
+ 
+diff --git a/src/scripts/session-services.lua b/src/scripts/session-services.lua
+index 6dc023e..095825c 100644
+--- a/src/scripts/session-services.lua
++++ b/src/scripts/session-services.lua
+@@ -7,8 +7,6 @@
+ local features_to_services = {
+   ["monitor.alsa"] = { "audio", "api.alsa" },
+   ["monitor.alsa-midi"] = { "midi", "api.alsa-seq" },
+-  ["monitor.bluez"] = { "bluetooth.audio", "api.bluez" },
+-  ["monitor.bluez-midi"] = { "bluetooth.midi", "api.bluez" },
+   ["monitor.v4l2"] = { "video-capture", "api.v4l2" },
+   ["monitor.libcamera"] = { "video-capture", "api.libcamera" },
+   ["policy.device.profile"] = { "policy.device.profile" },
+diff --git a/tests/examples/bt-pinephone.lua b/tests/examples/bt-pinephone.lua
+deleted file mode 100755
+index b794311..0000000
+--- a/tests/examples/bt-pinephone.lua
++++ /dev/null
+@@ -1,116 +0,0 @@
+-#!/usr/bin/wpexec
+---
+--- WirePlumber
+---
+--- Copyright © 2022 Collabora Ltd.
+---    @author Frédéric Danis <frederic.danis@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+---
+--- This is an example of the offload SCO nodes platform specific management,
+--- in this case for the PinePhone.
+---
+--- The PinePhone provides specific ALSA ports to route audio to the Bluetooth
+--- chipset. This script selects these ports when the offload SCO nodes state
+--- change to 'running'.
+---
+--- This scriptcan be executed as a standalone executable, or it can be placed
+--- in WirePlumber's scripts directory and loaded together with other scripts.
+------------------------------------------------------------------------------
+-
+-devices_om = ObjectManager {
+-  Interest {
+-    type = "device",
+-  }
+-}
+-
+-nodes_om = ObjectManager {
+-  Interest {
+-    type = "node",
+-    Constraint { "node.name", "#", "*.bluez_*put*"},
+-    Constraint { "device.id", "+" },
+-  }
+-}
+-
+-function parseParam(param, id)
+-  local route = param:parse()
+-  if route.pod_type == "Object" and route.object_id == id then
+-    return route.properties
+-  else
+-    return nil
+-  end
+-end
+-
+-function setPlatformRoute (route_name, direction)
+-  local platform_sound = nil
+-  local device_id = nil
+-  local route_save = nil
+-
+-  local interest = Interest {
+-    type = "device",
+-    Constraint { "device.name", "=", "alsa_card.platform-sound"}
+-  }
+-  for d in devices_om:iterate (interest) do
+-    platform_sound = d
+-
+-    for p in platform_sound:iterate_params("Route") do
+-      route = parseParam(p, "Route")
+-      if route.direction == direction then
+-        device_id = route.device
+-        route_save = route.save
+-      end
+-    end
+-
+-    for p in platform_sound:iterate_params("EnumRoute") do
+-      enum_route = parseParam(p, "EnumRoute")
+-
+-      if enum_route.name == route_name then
+-        route_index = enum_route.index
+-      end
+-    end
+-  end
+-
+-  if route.index == route_index then
+-    return
+-  end
+-
+-  -- default props
+-  local props = {
+-    "Spa:Pod:Object:Param:Props", "Route",
+-    mute = false,
+-  }
+-
+-  -- construct Route param
+-  local param = Pod.Object {
+-    "Spa:Pod:Object:Param:Route", "Route",
+-    index = route_index,
+-    device = device_id,
+-    props = Pod.Object(props),
+-    save = route_save,
+-  }
+-
+-  Log.info(param, "setting route on " .. tostring(platform_sound))
+-  platform_sound:set_param("Route", param)
+-end
+-
+-nodes_om:connect("object-added", function(_, node)
+-  node:connect("state-changed", function(node, old_state, cur_state)
+-    local interest = Interest {
+-      type = "device",
+-      Constraint { "object.id", "=", node.properties["device.id"]}
+-    }
+-    for d in devices_om:iterate (interest) do
+-      if cur_state == "running" then
+-        -- Both direction should be set to allow audio streaming
+-        setPlatformRoute("[Out] BluetoothHeadset", "Output")
+-        setPlatformRoute("[In] BluetoothHeadset", "Input")
+-      else
+-        setPlatformRoute("[Out] Earpiece", "Output")
+-        setPlatformRoute("[In] DigitalMic", "Input")
+-      end
+-    end
+-  end)
+-end)
+-
+-nodes_om:activate()
+-devices_om:activate()
+diff --git a/tests/examples/bt-profile-switch.lua b/tests/examples/bt-profile-switch.lua
+deleted file mode 100755
+index 776f0dd..0000000
+--- a/tests/examples/bt-profile-switch.lua
++++ /dev/null
+@@ -1,76 +0,0 @@
+-#!/usr/bin/wpexec
+---
+--- WirePlumber
+---
+--- Copyright © 2021 Collabora Ltd.
+---    @author George Kiagiadakis <george.kiagiadakis@collabora.com>
+---
+--- SPDX-License-Identifier: MIT
+---
+--- This is an example of a standalone policy making script. It can be executed
+--- either on top of another instance of wireplumber or pipewire-media-session,
+--- as a standalone executable, or it can be placed in WirePlumber's scripts
+--- directory and loaded together with other scripts.
+---
+--- The script basically watches for a client application called
+--- "ZOOM VoiceEngine", and when it appears (i.e. Zoom starts), it switches
+--- the profile of all connected bluetooth devices to the "headset-head-unit"
+--- (a.k.a HSP Headset Audio) profile. When Zoom exits, it switches again the
+--- profile of all bluetooth devices to A2DP Sink.
+---
+--- The script can be customized further to look for other clients and/or
+--- change the profile of a specific device, by customizing the constraints.
+------------------------------------------------------------------------------
+-
+-devices_om = ObjectManager {
+-  Interest { type = "device",
+-    Constraint { "device.api", "=", "bluez5" },
+-  }
+-}
+-
+-clients_om = ObjectManager {
+-  Interest { type = "client",
+-    Constraint { "application.name", "=", "ZOOM VoiceEngine" },
+-  }
+-}
+-
+-function set_profile(profile_name)
+-  for device in devices_om:iterate() do
+-    local index = nil
+-    local desc = nil
+-
+-    for profile in device:iterate_params("EnumProfile") do
+-      local p = profile:parse()
+-      if p.properties.name == profile_name then
+-        index = p.properties.index
+-        desc = p.properties.description
+-        break
+-      end
+-    end
+-
+-    if index then
+-      local pod = Pod.Object {
+-        "Spa:Pod:Object:Param:Profile", "Profile",
+-        index = index
+-      }
+-
+-      print("Setting profile of '"
+-            .. device.properties["device.description"]
+-            .. "' to: " .. desc)
+-      device:set_params("Profile", pod)
+-    end
+-  end
+-end
+-
+-clients_om:connect("object-added", function (om, client)
+-  print("Client '" .. client.properties["application.name"] .. "' connected")
+-  set_profile("headset-head-unit")
+-end)
+-
+-clients_om:connect("object-removed", function (om, client)
+-  print("Client '" .. client.properties["application.name"] .. "' disconnected")
+-  set_profile("a2dp-sink")
+-end)
+-
+-devices_om:activate()
+-clients_om:activate()
+diff --git a/tests/scripts/config/wireplumber.conf b/tests/scripts/config/wireplumber.conf
+index 45b7245..807e3b7 100644
+--- a/tests/scripts/config/wireplumber.conf
++++ b/tests/scripts/config/wireplumber.conf
+@@ -9,18 +9,6 @@ context.modules = [
+ ]
+ 
+ wireplumber.settings.schema = {
+-  ## Bluetooth
+-  bluetooth.use-persistent-storage = {
+-    description = "Whether to use persistent BT storage or not"
+-    type = "bool"
+-    default = true
+-  }
+-  bluetooth.autoswitch-to-headset-profile = {
+-    description = "Whether to autoswitch to BT headset profile or not"
+-    type = "bool"
+-    default = true
+-  }
+-
+   ## Device
+   device.restore-profile = {
+     description = "Whether to restore device profile or not"
+diff --git a/docs/rst/daemon/configuration/floss.rst b/docs/rst/daemon/configuration/floss.rst
+new file mode 100644
+index 0000000..79a29fb
+--- /dev/null
++++ b/docs/rst/daemon/configuration/floss.rst
+@@ -0,0 +1,99 @@
++.. _config_floss:
++
++Floss desktop audio
++===================
++
++This fork uses Floss for Bluetooth. The normal ``main`` profile manages the
++``Audio/Sink`` and ``Audio/Source`` nodes published by ``pw-floss --auto``.
++Floss owns Bluetooth codec encoding and radio transport. PipeWire mixes and
++converts application audio to the negotiated PCM format. WirePlumber applies
++ordinary audio linking, default-node selection and stream-volume policy.
++
++BlueZ monitors and their codec/profile switching code have been removed.
++There is no backend selector or BlueZ fallback. ALSA, video capture and generic
++audio policy remain available.
++
++Automatic profile policy
++------------------------
++
++The deployment starts one automatic bridge in the intended user audio session.
++It discovers connected audio devices through Floss, obtains the actual A2DP
++PCM format from the daemon, and exposes a playback node. A headset advertising
++HFP support also gets a microphone node while A2DP is active; a playback-only
++speaker does not get a microphone.
++
++Selecting the headset microphone for an active recording stream requests HFP.
++When the last active recorder leaves that source, the bridge debounces the idle
++transition before returning to A2DP. Playback and microphone node identities
++remain stable across a profile change. Recording from another source, such as
++a laptop microphone, does not request HFP. A passive level meter does not create
++capture demand. Until the voice transport is ready, the source supplies silence.
++
++The bridge owns this profile decision. WirePlumber does not issue competing
++Floss profile commands: its ordinary links determine whether the headset source
++is active. The bridge supplies session priorities so a newly connected headset
++can become the default when there is no explicit user choice. WirePlumber
++retains an explicitly selected built-in microphone or other device across
++headset reconnection. A voice-only device remains in HFP because it has no
++A2DP capability. Device reconnection, capability changes and Floss daemon replacement
++are handled by the automatic bridge. The bridge currently owns one audio device
++at a time; this is not a multi-headset audio mixer or active-seat arbiter.
++
++Configuration
++-------------
++
++Use the normal ``main`` profile; no Floss-specific WirePlumber profile is needed.
++For a multi-instance setup, the ``policy`` instance manages bridge nodes.
++Remove old ``main-floss`` profile selections and configuration referring to
++``monitor.bluez*`` or ``bluez5.*`` properties, which have no implementation in
++this fork. The system deployment must start Floss and the automatic bridge;
++selecting a WirePlumber profile alone does not start either process.
++
++The existing ``node.features.audio.mono`` setting applies to Floss sinks.
++The optional ``device.routes.mute-on-bluetooth-playback-removed`` setting mutes
++ALSA outputs when a running Floss sink disappears, avoiding unexpected speaker
++playback after disconnection. Floss sinks need no PipeWire Device or card-profile
++ID for this policy. The installed ``floss.conf`` example shows the setting.
++
++Bridge contract
++---------------
++
++The bridge publishes these ordinary device nodes:
++
++======================== ==============================================
++Property                 Value
++======================== ==============================================
++``media.class``          ``Audio/Sink`` or ``Audio/Source``
++``device.api``           ``floss``
++``node.name``            ``floss_output.<address>`` / ``floss_input.<address>``
++``api.floss.address``    Bluetooth device address
++``api.floss.adapter``    HCI adapter index
++``api.floss.profile``    ``auto`` for automatic management
++======================== ==============================================
++
++Colons in the node-name address are replaced by underscores. Per-application
++volume remains software controlled. The source and sink PCM formats may be
++renegotiated during profile changes without replacing the nodes. Floss's
++negotiated format query is authoritative; codec capability flags alone do not
++determine the actual feeder rate or prove that a particular codec is active.
++
++A2DP playback can use Floss's enabled codecs, including AAC when both endpoints
++support it and Floss negotiates it. HFP uses Floss's CVSD/mSBC voice path.
++The bridge does not implement Bluetooth codecs. Real controller/kernel SCO
++transport support is still required for headset microphone audio.
++
++Permissions and lifecycle
++-------------------------
++
++The deployment permits the bridge to call Floss D-Bus methods, receive callbacks,
++access PCM sockets through the ``bluetooth-audio`` group, and own the cooperative
++``org.pipewire.FlossAudio`` bus name. Floss reserves audio using a token bound to
++the actual D-Bus caller and excludes competing operations until native teardown
++completes. WirePlumber configuration grants none of these permissions.
++
++An automatic bridge does not itself prove active-seat ownership. The user-service
++configuration must start it only in the intended audio session; shared or
++multi-seat systems need separate ownership policy. No desktop-side software
++fixture can establish real headset interoperability, RF reliability or controller
++SCO support. The integration's isolated test reports distinguish scripted PCM
++and device capabilities from actual Floss codec and controller tests.
+diff --git a/src/config/wireplumber.conf.d.examples/floss.conf b/src/config/wireplumber.conf.d.examples/floss.conf
+new file mode 100644
+index 0000000..fcb3ee1
+--- /dev/null
++++ b/src/config/wireplumber.conf.d.examples/floss.conf
+@@ -0,0 +1,11 @@
++# Floss desktop audio policy. The normal main profile manages the stable
++# Audio/Sink and headset Audio/Source nodes from the automatic pw-floss bridge.
++# Ordinary recording links activate the headset source; the bridge owns HFP
++# switching and idle return to A2DP. WirePlumber does not run a second profile
++# coordinator. Start the bridge through the deployment's user service.
++#
++# Optionally mute ALSA output routes when a running Floss sink disappears,
++# preventing fallback to speakers from unexpectedly exposing playback.
++# wireplumber.settings = {
++#   device.routes.mute-on-bluetooth-playback-removed = true
++# }
