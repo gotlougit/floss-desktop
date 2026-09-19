@@ -24,6 +24,23 @@ energy matches the input tone after encoder priming. Invalid configurations and
 truncated PCM must be rejected without killing the service. Repeated encoder
 sessions check worker cleanup across profile turnover.
 
+The native AAC feeder also has a short-read regression. Run it with an existing
+C++ compiler (no downloads):
+
+```sh
+python3 tools/test-aac-feeder.py --cxx /path/to/c++ --output /tmp/aac-feeder-test
+```
+
+It compiles the production `a2dp_aac_encode_frames` and
+`a2dp_aac_read_feeding` functions unchanged, substituting their external I/O
+boundaries. Empty reads defer encoding; nonempty short reads must send a full
+zero-padded frame while retaining the original consumed-byte count. The old
+caller fails this test because it sends the unpadded length to MMC.
+
+Pass `--feeder /tmp/aac-feeder-test` to the codec runner above to additionally
+send the production feeder's output through the real MMC encoder. This checks
+15 frames from short and full reads without accessing the host daemon.
+
 The runner uses private mount, network, PID and other namespaces, drops all
 capabilities, and creates its own `/run/mmc/sockets`. It cannot reach a host
 Bluetooth controller, service bus or audio graph. Only its report directory is

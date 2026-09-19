@@ -42,3 +42,5 @@ upstream bases. Source forks and the packaging repository must be updated togeth
 
 See [BUILD-STATUS.md](BUILD-STATUS.md) and [RUNTIME-STATUS.md](RUNTIME-STATUS.md)
 for validation scope and known limitations.
+
+See [September 19 fixes](FIXES-2026-09-19.md) for KDE output visibility, AAC short-read framing, state-file persistence, and upgrading an existing installation.

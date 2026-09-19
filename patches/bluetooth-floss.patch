@@ -1074,7 +1074,7 @@ index d078d1bc14..6226d0a9e5 100644
      "//bt/system/gd/crypto_toolbox:crypto_toolbox",
      "//bt/system/gd/rust/topshim:cxxlibheader",
 diff --git a/system/stack/a2dp/a2dp_aac_encoder_linux.cc b/system/stack/a2dp/a2dp_aac_encoder_linux.cc
-index 0388840cd6..ad4f38adee 100644
+index 0388840cd6..c23529b60b 100644
 --- a/system/stack/a2dp/a2dp_aac_encoder_linux.cc
 +++ b/system/stack/a2dp/a2dp_aac_encoder_linux.cc
 @@ -16,6 +16,10 @@
@@ -1128,6 +1128,18 @@ index 0388840cd6..ad4f38adee 100644
    codec_intf.clear_context();
    a2dp_aac_encoder_cb = tA2DP_AAC_ENCODER_CB{};
  }
+@@ -316,7 +332,10 @@ static void a2dp_aac_encode_frames(uint8_t nb_frame) {
+     p_buf->layer_specific = 0;
+ 
+     int written =
+-            codec_intf.encode_pcm(read_buffer, bytes_read, (uint8_t*)(p_buf + 1) + p_buf->offset,
++            // The feeder pads short reads to a complete AAC input frame.
++            // bytes_read tracks real PCM consumed for statistics/enqueue,
++            // not the padded length required by the MMC encoder.
++            codec_intf.encode_pcm(read_buffer, pcm_bytes_per_frame, (uint8_t*)(p_buf + 1) + p_buf->offset,
+                                   BT_DEFAULT_BUFFER_SIZE - 1 - p_buf->offset);
+ 
+     if (written < 0) {
 diff --git a/system/stack/a2dp/a2dp_sbc_encoder.cc b/system/stack/a2dp/a2dp_sbc_encoder.cc
 index fb455e219b..5bdf041b2a 100644
 --- a/system/stack/a2dp/a2dp_sbc_encoder.cc

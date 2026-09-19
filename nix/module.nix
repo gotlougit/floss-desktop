@@ -193,6 +193,10 @@ in {
         Type = "dbus";
         BusName = "org.chromium.bluetooth";
         ExecStart = "${adapterLauncher} %i";
+        # Upstream's Linux IoT device database uses relative filenames,
+        # including its atomic .new and backup files. Keep all of them in
+        # the private writable state directory under ProtectSystem=strict.
+        WorkingDirectory = "/var/lib/bluetooth";
         # Native audio/timer threads request FIFO priority 1. Bound that
         # permission without granting CAP_SYS_NICE or unrestricted realtime.
         RestrictRealtime = false;

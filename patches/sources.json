@@ -10,8 +10,8 @@
     "url": "https://gitlab.freedesktop.org/pipewire/pipewire.git",
     "rev": "744a6b547ddb511e46fb41c1e54d033eca4faec9",
     "patch": "pipewire-floss.patch",
-    "patchFileHash": "sha256-aIEE87BGyHmNmonCAw1txPRqZ6OyyXAKun5XNa2/1bw=",
-    "patchBytes": 1878457
+    "patchFileHash": "sha256-xCjV6C3NdhhyvN2RTOlSPuQY/BtAFn4vI2ab6cT2JwE=",
+    "patchBytes": 1879162
   },
   "wireplumber": {
     "url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",
@@ -24,8 +24,8 @@
     "url": "https://android.googlesource.com/platform/packages/modules/Bluetooth",
     "rev": "745ee92b87ed62b5a8a1bac47d5df8cad623bf59",
     "patch": "bluetooth-floss.patch",
-    "patchFileHash": "sha256-zzIvSE+wnNtwfP65hPfby1omTCIlxmCK9oxtgv9DTH4=",
-    "patchBytes": 58652,
+    "patchFileHash": "sha256-kAs+PJJmqy3MxwqzTW7kVfRlhjWXYR7EcpLeSC45xf4=",
+    "patchBytes": 59312,
     "extraPatches": [
       {
         "patch": "bluetooth-service-runtime.patch",

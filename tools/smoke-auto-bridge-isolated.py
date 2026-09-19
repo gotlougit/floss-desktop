@@ -140,6 +140,10 @@ try:
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()
+        for node in props:
+            assert node.get('node.virtual') is False, 'physical endpoint marked virtual'
+            assert node.get('device.bus') == 'bluetooth', 'Bluetooth identity missing'
+            assert node.get('node.description') == 'Scripted headset', 'device name missing'
         sink = next(n['node.name'] for n in props if n['media.class'] == 'Audio/Sink')
         ids = node_ids()
         play = playback(kind + '-play', sink)

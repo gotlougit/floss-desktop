@@ -21,6 +21,7 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--floss', type=Path, required=True)
 p.add_argument('--ffmpeg', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
+p.add_argument('--feeder', type=Path, help='Optional compiled production short-read feeder regression')
 p.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
 a = p.parse_args()
 if not a.inside:
@@ -35,6 +36,10 @@ if not a.inside:
         '--setenv', 'SMOKE_BUSCTL', str(Path(shutil.which('busctl')).resolve()),
         str(Path(sys.executable).resolve()), '/smoke.py', '--inside',
         '--floss', str(a.floss.resolve()), '--ffmpeg', str(a.ffmpeg.resolve()), '--output', '/report']
+    if a.feeder:
+        executable_index = command.index(str(Path(sys.executable).resolve()))
+        command[executable_index:executable_index] = ['--ro-bind', str(a.feeder.resolve()), '/feeder']
+        command += ['--feeder', '/feeder']
     sys.exit(subprocess.call(command))
 
 Path('/run/mmc/sockets').mkdir(parents=True)
@@ -151,6 +156,14 @@ try:
             sock.sendall(bytes(count * 4)); assert sock.recv(32768)
         time.sleep(.03); assert call('CodecCleanUp').returncode == 0
     results['repeatedEncoderSessions'] = 12
+    if a.feeder:
+        path, _ = parse_response(init(44100))
+        run = subprocess.run([str(a.feeder), path], env=env,
+                             capture_output=True, text=True, timeout=15)
+        assert run.returncode == 0, run.stdout + run.stderr
+        (a.output / 'short-read-feeder.log').write_text(run.stdout + run.stderr)
+        time.sleep(.1); assert call('CodecCleanUp').returncode == 0
+        results['productionShortReadFeederFrames'] = 15
     assert mmc.poll() is None
     (a.output / 'summary.json').write_text(json.dumps(results, indent=2) + '\n')
     print(json.dumps(results, indent=2))

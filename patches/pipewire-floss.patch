@@ -59615,10 +59615,10 @@ index a2c9802e4..43776a26f 100644
  	pw_init(0, NULL);
 diff --git a/src/tools/pw-floss.c b/src/tools/pw-floss.c
 new file mode 100644
-index 000000000..2d39baab2
+index 000000000..6490f5822
 --- /dev/null
 +++ b/src/tools/pw-floss.c
-@@ -0,0 +1,1489 @@
+@@ -0,0 +1,1499 @@
 +/* PipeWire */
 +/* SPDX-License-Identifier: MIT */
 +
@@ -59691,6 +59691,7 @@ index 000000000..2d39baab2
 +	char *owner;
 +	char path[96];
 +	char address[18];
++	char device_name[249];
 +	int audio_fd;
 +	bool failed;
 +	bool starting;
@@ -60714,16 +60715,19 @@ index 000000000..2d39baab2
 +	struct pw_properties *props;
 +	struct pw_stream **stream = capture ? &b->capture : &b->stream;
 +	char node_name[64];
-+	const char *description = capture ? "Floss Headset Microphone (experimental)" :
-+		b->hfp ? "Floss Headset Audio (experimental)" : "Floss A2DP (experimental)";
++	const char *description = b->device_name[0] ? b->device_name : b->address;
 +
 +	props = pw_properties_new(PW_KEY_MEDIA_CLASS, capture ? "Audio/Source" : "Audio/Sink",
 +		PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, capture ? "Capture" : "Playback",
 +		PW_KEY_NODE_DESCRIPTION, description, "device.api", "floss",
++		"device.description", description, "device.bus", "bluetooth",
++		"device.icon-name", capture ? "audio-input-microphone-bluetooth" : "audio-headphones-bluetooth",
 +		"api.floss.profile", b->automatic ? "auto" : b->hfp ? "hfp" : "a2dp",
 +        "api.floss.active-profile", b->hfp ? "hfp" : "a2dp",
 +        "priority.session", capture ? "3010" : "2010",
-+		"node.pause-on-idle", "true", "node.virtual", "true", "node.want-driver", "true",
++		/* These streams represent physical Bluetooth endpoints. Marking them
++		 * virtual hides them in desktop mixers that filter software sinks. */
++		"node.pause-on-idle", "true", "node.virtual", "false", "node.want-driver", "true",
 +        "resample.disable", "false", NULL);
 +	if (!props)
 +		return false;
@@ -60782,7 +60786,7 @@ index 000000000..2d39baab2
 +    dbus_message_iter_recurse(&array, &devices);
 +    while (dbus_message_iter_get_arg_type(&devices) == DBUS_TYPE_ARRAY) {
 +        DBusMessageIter entries;
-+        const char *address = NULL;
++        const char *address = NULL, *name = NULL;
 +        dbus_int32_t hfp = 0;
 +        bool a2dp = false;
 +        dbus_message_iter_recurse(&devices, &entries);
@@ -60796,6 +60800,8 @@ index 000000000..2d39baab2
 +            int type = dbus_message_iter_get_arg_type(&value);
 +            if (!strcmp(key, "address") && type == DBUS_TYPE_STRING)
 +                dbus_message_iter_get_basic(&value, &address);
++            else if (!strcmp(key, "name") && type == DBUS_TYPE_STRING)
++                dbus_message_iter_get_basic(&value, &name);
 +            else if (!strcmp(key, "hfp_cap") && type == DBUS_TYPE_INT32)
 +                dbus_message_iter_get_basic(&value, &hfp);
 +            else if (!strcmp(key, "a2dp_caps") && type == DBUS_TYPE_ARRAY) {
@@ -60813,6 +60819,10 @@ index 000000000..2d39baab2
 +                break;
 +            }
 +            snprintf(b->address, sizeof(b->address), "%s", address);
++            /* D-Bus strings are UTF-8; reject oversized names rather than
++             * truncating a multibyte character in a desktop-facing label. */
++            snprintf(b->device_name, sizeof(b->device_name), "%s",
++                name && strlen(name) < sizeof(b->device_name) ? name : address);
 +            b->microphone = microphone;
 +            /* Voice-only devices remain in their only available profile. */
 +            b->a2dp_available = a2dp;
