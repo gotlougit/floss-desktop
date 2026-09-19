@@ -17,6 +17,7 @@ p.add_argument('--pipewire', required=True, type=Path)
 p.add_argument('--wireplumber', required=True, type=Path)
 p.add_argument('--mock', required=True, type=Path)
 p.add_argument('--bridge', type=Path, help='Optional incremental bridge binary')
+p.add_argument('--vlc', type=Path, help='Existing VLC executable in /nix/store for corked startup regression')
 p.add_argument('--pulse-tools', type=Path, help='Existing PulseAudio bin directory for pulse-pause regression')
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--cases', default='sbc,aac,speaker,mono,cvsd,msbc,delayed,hfp-only,denied,lifecycle,defaults')
@@ -37,6 +38,8 @@ if not a.inside:
         '--wireplumber', str(a.wireplumber.resolve()), '--mock', '/mock', '--bridge', '/bridge', '--cases', a.cases, '--output', '/report']
     if a.pulse_tools:
         command += ['--pulse-tools', str(a.pulse_tools.resolve())]
+    if a.vlc:
+        command += ['--vlc', str(a.vlc.resolve())]
     sys.exit(subprocess.call(command))
 
 for name in ('/tmp/runtime', '/tmp/config', '/tmp/state', '/tmp/cache', '/tmp/data', '/var/run/bluetooth/audio'):
@@ -97,6 +100,47 @@ def node_ids():
         if o.get('type') == 'PipeWire:Interface:Node' and
         o.get('info', {}).get('props', {}).get('device.api') == 'floss'}
 
+def node_ports(node_id):
+    return [o.get('info', {}).get('props', {}) for o in graph()
+        if o.get('type') == 'PipeWire:Interface:Port' and
+        o.get('info', {}).get('props', {}).get('node.id') == node_id]
+
+def volume(node_id):
+    output = subprocess.check_output([str(a.wireplumber / 'bin/wpctl'), 'get-volume', str(node_id)],
+        env=env, text=True, timeout=5)
+    match = re.search(r'Volume:\s+([0-9.]+)', output)
+    assert match, ('source volume unavailable', output)
+    return float(match[1])
+
+def pcm_metrics(data, rate):
+    samples = struct.unpack('<' + 'h' * (len(data) // 2), data)
+    middle = samples[len(samples) // 4:3 * len(samples) // 4]
+    assert middle, 'microphone PCM contained no complete samples'
+    crossings, polarity = 0, 0
+    for sample in middle:
+        next_polarity = 1 if sample > 6000 else -1 if sample < -6000 else polarity
+        if polarity and next_polarity != polarity: crossings += 1
+        polarity = next_polarity
+    nonzero = sum(sample != 0 for sample in middle)
+    positive = sum(sample > 1000 for sample in middle)
+    negative = sum(sample < -1000 for sample in middle)
+    metrics = {
+        'toneHz': crossings * rate / len(middle) / 2,
+        'peak': max(abs(sample) for sample in middle),
+        'meanAbsolute': sum(abs(sample) for sample in middle) / len(middle),
+        'dcOffset': sum(middle) / len(middle),
+        'nonzeroFraction': nonzero / len(middle),
+        'positiveFraction': positive / len(middle),
+        'negativeFraction': negative / len(middle),
+    }
+    assert metrics['peak'] > 7000, ('microphone level too low', metrics)
+    assert metrics['meanAbsolute'] > 3000, ('microphone signal energy too low', metrics)
+    assert abs(metrics['dcOffset']) < 1500, ('microphone has excessive DC offset', metrics)
+    assert metrics['nonzeroFraction'] > .8, ('microphone mostly silent', metrics)
+    assert metrics['positiveFraction'] > .2 and metrics['negativeFraction'] > .2, \
+        ('microphone lost one polarity', metrics)
+    return metrics
+
 def record(name, target, passive=False):
     command = [str(a.pipewire / 'bin/pw-cat'), '--record', '--raw', '--rate=16000', '--channels=1',
         '--format=s16', '--latency=20ms']
@@ -139,6 +183,30 @@ try:
         '--playback-props=media.class=Audio/Source node.name=test_builtin_mic node.pause-on-idle=true priority.session=2009'])
     Path('/tmp/music.raw').write_bytes(b''.join(struct.pack('<hh', 8000 if i % 120 < 60 else -8000,
         8000 if i % 120 < 60 else -8000) for i in range(48000 * 40)))
+    if 'vlc' in a.cases.split(','):
+        assert a.vlc, '--vlc is required'
+        import wave
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        start('pulse', [str(a.pipewire / 'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        mock, bridge = begin('aac', 'vlc')
+        sink = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Sink')
+        env['PULSE_SINK'] = sink
+        with wave.open('/tmp/test.wav', 'wb') as wav:
+            wav.setparams((2,2,48000,0,'NONE','not compressed'))
+            wav.writeframes(Path('/tmp/music.raw').read_bytes()[:48000*4*3])
+        time.sleep(6)
+        player = start('vlc', [str(a.vlc), '--intf=dummy','--no-video','--no-one-instance','--play-and-exit','/tmp/test.wav'])
+        try:
+            player.wait(timeout=12)
+            assert player.returncode == 0
+        except subprocess.TimeoutExpired:
+            (a.output/'stalled-graph.json').write_text(json.dumps(graph(),indent=2))
+            raise AssertionError('VLC failed to start/finish three seconds of audio within 12 seconds')
+        finish(mock, bridge)
+        m = re.search(r'a2dp_nonzero=(\d+)', report('mock-vlc'))
+        assert m and int(m[1]) > 10000, 'VLC produced no meaningful PCM'
+        checks.append({'case':'vlc','completed':True,'nonzeroPcmBytes':int(m[1])})
     if 'jitter' in a.cases.split(','):
         for kind, profile in [('speaker', 'a2dp'), ('hfp-only', 'hfp')]:
             mock, bridge = begin(kind, 'jitter-' + kind)
@@ -186,7 +254,7 @@ try:
         assert bridge.poll() is None, 'bridge crashed on player disconnect'
         finish(mock, bridge)
         checks.append({'case': 'pulse-pause', 'cycles': 8, 'stableNodeIds': True})
-    for kind in (item for item in a.cases.split(',') if item not in ('lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
+    for kind in (item for item in a.cases.split(',') if item not in ('vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()
@@ -206,6 +274,17 @@ try:
         case = {'kind': kind, 'builtinMicDoesNotSwitch': True, 'initialNodeCount': len(props)}
         if kind not in ('speaker', 'mono'):
             source = next(n['node.name'] for n in props if n['media.class'] == 'Audio/Source')
+            source_id = ids[source]
+            source_ports = node_ports(source_id)
+            assert len(source_ports) == 1, ('headset microphone must expose one channel', source_ports)
+            assert source_ports[0].get('audio.channel') == 'MONO', \
+                ('headset microphone channel is not MONO', source_ports)
+            # WirePlumber intentionally remembers node volume by stable name.
+            # Normalize it before evaluating PCM so the preceding matrix case's
+            # persistence check cannot lower the next case's fixture tone.
+            subprocess.run([str(a.wireplumber / 'bin/wpctl'), 'set-volume', str(source_id), '100%'],
+                env=env, check=True, timeout=5)
+            assert abs(volume(source_id) - 1.0) < .011, ('source volume was not normalized', volume(source_id))
             meter = record(kind + '-passive-meter', source, passive=True)
             time.sleep(1)
             assert starts(mock_name, 'hfp') == 0, 'passive meter caused HFP switch'
@@ -217,6 +296,9 @@ try:
             assert node_ids() == ids, 'node identities changed entering HFP'
             assert bridge.poll() is None and capture.poll() is None and play.poll() is None
             stop(capture)
+            subprocess.run([str(a.wireplumber / 'bin/wpctl'), 'set-volume', str(source_id), '37%'],
+                env=env, check=True, timeout=5)
+            assert abs(volume(source_id) - .37) < .011, ('source volume was not applied', volume(source_id))
             # Brief consumer restart must not release and reacquire transport.
             time.sleep(.25)
             capture2 = record(kind + '-headset-record2', source)
@@ -225,20 +307,16 @@ try:
             stop(capture2)
             wait_for(lambda: current_profile() == 'a2dp', 'idle microphone did not return A2DP')
             assert node_ids() == ids, 'node identities changed leaving HFP'
+            assert abs(volume(source_id) - .37) < .011, ('source volume lost across profile round trip', volume(source_id))
             data = Path('/tmp/' + kind + '-headset-record.raw').read_bytes()
             assert len(data) >= 16000 and any(data), ('microphone PCM absent', kind, len(data))
-            samples = struct.unpack('<' + 'h' * (len(data) // 2), data)
-            middle = samples[len(samples) // 4:3 * len(samples) // 4]
-            crossings, polarity = 0, 0
-            for sample in middle:
-                next_polarity = 1 if sample > 6000 else -1 if sample < -6000 else polarity
-                if polarity and next_polarity != polarity: crossings += 1
-                polarity = next_polarity
-            frequency = crossings * 16000 / len(middle) / 2
-            assert 475 < frequency < 525, ('microphone rate conversion corrupted tone', kind, frequency)
-            case['captureToneHz'] = frequency
+            metrics = pcm_metrics(data, 16000)
+            assert 475 < metrics['toneHz'] < 525, ('microphone rate conversion corrupted tone', kind, metrics)
+            case['captureMetrics'] = metrics
             case.update(headsetMicSwitches=True, passiveMeterDoesNotSwitch=True,
-                recordingRestartDebounced=True, returnsA2dp=True, stableNodeIds=True, capturedBytes=len(data))
+                concurrentDuplex=True, recordingRestartDebounced=True, returnsA2dp=True,
+                stableNodeIds=True, capturedBytes=len(data))
+            case.update(monoSourceChannel=True, sourceVolumePersists=True)
         else:
             assert not any(n['media.class'] == 'Audio/Source' for n in nodes())
             assert starts(mock_name, 'hfp') == 0
@@ -297,6 +375,9 @@ try:
         mock, bridge = begin('msbc', 'lifecycle')
         sink = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Sink')
         source = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Source')
+        source_id = node_ids()[source]
+        subprocess.run([str(a.wireplumber / 'bin/wpctl'), 'set-volume', str(source_id), '100%'],
+            env=env, check=True, timeout=5)
         play = playback('disconnect-play', sink)
         ids = node_ids(); control('second'); time.sleep(2)
         assert node_ids() == ids and bridge.poll() is None, 'second device stole active audio'
@@ -312,6 +393,15 @@ try:
         assert bridge.poll() is None
         stop(capture); control('online')
         wait_for(lambda: len(nodes()) == 2 and current_profile() == 'a2dp', 'call reconnect failed')
+        recovered = record('reconnected-call', source)
+        wait_for(lambda: current_profile() == 'hfp', 'reconnected microphone did not start HFP')
+        time.sleep(1.5); stop(recovered)
+        wait_for(lambda: current_profile() == 'a2dp', 'reconnected microphone did not return A2DP')
+        recovered_data = Path('/tmp/reconnected-call.raw').read_bytes()
+        assert len(recovered_data) >= 16000 and any(recovered_data), \
+            ('reconnected microphone PCM absent', len(recovered_data))
+        recovered_metrics = pcm_metrics(recovered_data, 16000)
+        assert 475 < recovered_metrics['toneHz'] < 525, ('reconnected microphone tone corrupted', recovered_metrics)
         control('speaker')
         wait_for(lambda: len(nodes()) == 1, 'removed HFP capability retained microphone')
         control('headset')
@@ -326,6 +416,7 @@ try:
         finish(mock, bridge)
         checks.append({'case': 'lifecycle', 'disconnectDuringPlayback': True, 'disconnectDuringCall': True,
             'capabilityRemovalAndReturn': True, 'daemonRestart': True, 'secondDeviceDoesNotStealActiveAudio': True})
+        checks[-1].update(reconnectedCaptureBytes=len(recovered_data), reconnectedCaptureMetrics=recovered_metrics)
     if 'defaults' in a.cases.split(','):
         def default_node(kind):
             for obj in graph():
@@ -365,5 +456,5 @@ finally:
     'bridgeExecutable': os.environ.get('SMOKE_BRIDGE_ORIGIN', str(a.bridge or a.pipewire / 'bin/pw-floss')),
     'bridgeSha256': hashlib.sha256((a.bridge or a.pipewire / 'bin/pw-floss').read_bytes()).hexdigest(),
     'checks': checks,
-    'limitations': 'Scripted capability/PCM peers only. Advertised AAC is not proof of actual AAC negotiation or encoding; no controller/radio/headset.'}, indent=2) + '\n')
+    'limitations': 'Scripted capability and post-Floss PCM peers only. CVSD/mSBC cases validate their 8/16 kHz bridge contracts, not SCO codec negotiation or bitstreams. Advertised AAC is not proof of actual AAC negotiation or encoding. No controller, radio, or headset.'}, indent=2) + '\n')
 print(json.dumps(checks, indent=2))

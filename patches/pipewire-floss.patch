@@ -59658,10 +59658,10 @@ index a2c9802e4..43776a26f 100644
  	pw_init(0, NULL);
 diff --git a/src/tools/pw-floss.c b/src/tools/pw-floss.c
 new file mode 100644
-index 000000000..91af1ca78
+index 000000000..fd80e8178
 --- /dev/null
 +++ b/src/tools/pw-floss.c
-@@ -0,0 +1,1503 @@
+@@ -0,0 +1,1507 @@
 +/* PipeWire */
 +/* SPDX-License-Identifier: MIT */
 +
@@ -60773,6 +60773,10 @@ index 000000000..91af1ca78
 +		/* These streams represent physical Bluetooth endpoints. Marking them
 +		 * virtual hides them in desktop mixers that filter software sinks. */
 +		"node.pause-on-idle", "true", "node.virtual", "false", "node.want-driver", "true",
++        /* This PCM endpoint has no hardware driver to start its graph. Keep
++         * playback scheduled so initially corked Pulse clients can negotiate
++         * a format before uncorking. Capture must remain demand-driven. */
++        "node.always-process", capture ? "false" : "true",
 +        "resample.disable", "false", NULL);
 +	if (!props)
 +		return false;
