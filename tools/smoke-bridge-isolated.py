@@ -16,7 +16,7 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--pipewire', required=True, type=Path)
 p.add_argument('--wireplumber', required=True, type=Path)
 p.add_argument('--mock', required=True, type=Path)
-p.add_argument('--bridge', type=Path, help='Optional incremental bridge binary')
+p.add_argument('--bridge', required=True, type=Path, help='Standalone pw-floss binary')
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
 a = p.parse_args()
@@ -28,8 +28,8 @@ if not a.inside:
         '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--tmpfs', '/run', '--tmpfs', '/var',
         '--dir', '/sys', '--ro-bind', str(Path(__file__).resolve()), '/smoke.py',
         '--ro-bind', str(a.mock.resolve()), '/mock',
-        '--ro-bind', str((a.bridge or a.pipewire / 'bin/pw-floss').resolve()), '/bridge', '--bind', str(a.output.resolve()), '/report',
-        '--setenv', 'SMOKE_BRIDGE_ORIGIN', str((a.bridge or a.pipewire / 'bin/pw-floss').resolve()),
+        '--ro-bind', str(a.bridge.resolve()), '/bridge', '--bind', str(a.output.resolve()), '/report',
+        '--setenv', 'SMOKE_BRIDGE_ORIGIN', str(a.bridge.resolve()),
         '--setenv', 'SMOKE_DBUS', str(Path(shutil.which('dbus-daemon')).resolve()),
         str(Path(sys.executable).resolve()), '/smoke.py', '--inside', '--pipewire', str(a.pipewire.resolve()),
         '--wireplumber', str(a.wireplumber.resolve()), '--mock', '/mock', '--bridge', '/bridge', '--output', '/report']
@@ -72,7 +72,7 @@ def nodes():
     return [o.get('info', {}).get('props', {}) for o in graph()
         if o.get('type') == 'PipeWire:Interface:Node' and
         o.get('info', {}).get('props', {}).get('device.api') == 'floss']
-bridge_command = [str(a.bridge or a.pipewire / 'bin/pw-floss'), '--profile', 'hfp', '--device', 'AA:BB:CC:DD:EE:FF']
+bridge_command = [str(a.bridge), '--profile', 'hfp', '--device', 'AA:BB:CC:DD:EE:FF']
 try:
     start('bus', [os.environ['SMOKE_DBUS'], '--nofork', '--config-file=/tmp/bus.conf'])
     wait_for(lambda: Path('/tmp/private-bus').exists(), 'bus missing')
@@ -83,7 +83,7 @@ try:
     for mode in ('normal', 'bad-format', 'generation-change', 'disconnect', 'owner-loss', 'a2dp', 'a2dp-counter-reset'):
         mock = start('mock-' + mode, [str(a.mock), mode])
         wait_for(lambda: 'ready' in (a.output / ('mock-' + mode + '.log')).read_text(), 'mock missing')
-        command = bridge_command if not mode.startswith('a2dp') else [str(a.bridge or a.pipewire / 'bin/pw-floss'),
+        command = bridge_command if not mode.startswith('a2dp') else [str(a.bridge),
             '--profile', 'a2dp', '--device', 'AA:BB:CC:DD:EE:FF']
         bridge = start('bridge-' + mode, command)
         if mode == 'normal':
@@ -143,5 +143,5 @@ try:
 finally:
     for child in reversed(processes): stop(child)
     for log in logs: log.close()
-(a.output / 'summary.json').write_text(json.dumps({'pipewirePackage': str(a.pipewire), 'wireplumberPackage': str(a.wireplumber), 'bridgeExecutable': os.environ.get('SMOKE_BRIDGE_ORIGIN', str(a.bridge or a.pipewire / 'bin/pw-floss')), 'bridgeSha256': hashlib.sha256((a.bridge or a.pipewire / 'bin/pw-floss').read_bytes()).hexdigest(), 'checks': checks, 'limitations': 'Mock HFP/A2DP transports only: no controller, radio, codecs or physical headset.'}, indent=2) + '\n')
+(a.output / 'summary.json').write_text(json.dumps({'pipewirePackage': str(a.pipewire), 'wireplumberPackage': str(a.wireplumber), 'bridgeExecutable': os.environ.get('SMOKE_BRIDGE_ORIGIN', str(a.bridge)), 'bridgeSha256': hashlib.sha256(a.bridge.read_bytes()).hexdigest(), 'checks': checks, 'limitations': 'Mock HFP/A2DP transports only: no controller, radio, codecs or physical headset.'}, indent=2) + '\n')
 print(json.dumps(checks, indent=2))

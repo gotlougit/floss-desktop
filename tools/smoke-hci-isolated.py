@@ -13,7 +13,7 @@ import time
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--floss', required=True, type=Path)
-p.add_argument('--pipewire', type=Path, help='Also check actual bridge rejection for a disconnected device')
+p.add_argument('--bridge', type=Path, help='Also check standalone bridge rejection for a disconnected device')
 p.add_argument('--socket-client', type=Path, help='Cached private-bus SocketManager authorization probe')
 p.add_argument('--shim', required=True, type=Path)
 p.add_argument('--output', required=True, type=Path)
@@ -34,8 +34,8 @@ if not a.inside:
         '--setenv', 'SMOKE_BUSCTL', str(Path(shutil.which('busctl')).resolve()),
         str(Path(sys.executable).resolve()), '/smoke.py', '--inside', '--floss', str(a.floss.resolve()),
         '--shim', '/shim.so', '--output', '/report']
-    if a.pipewire:
-        command += ['--pipewire', str(a.pipewire.resolve())]
+    if a.bridge:
+        command += ['--bridge', str(a.bridge.resolve())]
     if a.socket_client:
         position = command.index('--setenv')
         command[position:position] = ['--ro-bind', str(a.socket_client.resolve()), '/socket-client']
@@ -129,9 +129,9 @@ try:
             authorization['clientSha256'] = hashlib.sha256(a.socket_client.read_bytes()).hexdigest()
             results['socketManagerAuthorization'] = authorization
             assert adapter.poll() is None, 'adapter exited during socket authorization checks'
-        if a.pipewire:
+        if a.bridge:
             for profile in ('hfp', 'a2dp'):
-                command = [str(a.pipewire / 'bin/pw-floss'), '--profile', profile,
+                command = [str(a.bridge), '--profile', profile,
                     '--device', 'AA:BB:CC:DD:EE:FF']
                 bridge = subprocess.run(command, env=env, capture_output=True, text=True, timeout=8)
                 (a.output / ('actual-bridge-' + profile + '.log')).write_text(bridge.stdout + bridge.stderr)

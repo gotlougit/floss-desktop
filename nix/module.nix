@@ -293,7 +293,7 @@ in {
       partOf = [ "graphical-session.target" "pipewire.service" ];
       unitConfig.ConditionGroup = "bluetooth-audio";
       serviceConfig = {
-        ExecStart = "${packages.pipewire}/bin/pw-floss --auto --adapter ${toString cfg.floss.adapter}";
+        ExecStart = "${packages.pw-floss}/bin/pw-floss --auto --adapter ${toString cfg.floss.adapter}";
         Restart = "on-failure";
         RestartSec = 3;
         TimeoutStopSec = 15;
@@ -310,7 +310,7 @@ in {
     '';
     services.pipewire.package = packages.pipewire;
     services.pipewire.wireplumber.package = packages.wireplumber;
-    environment.systemPackages = [ floss packages.bluedevil ];
+    environment.systemPackages = [ floss packages.pw-floss packages.bluedevil ];
     environment.sessionVariables.BLUEDEVIL_FLOSS_ADAPTER = toString cfg.floss.adapter;
   };
 }

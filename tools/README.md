@@ -15,9 +15,11 @@ activating host Bluetooth or audio services. Run Python entry points with
 
 - `smoke-aac-isolated.py` exercises the real MMC AAC encoder over a private
   D-Bus and socket filesystem.
-- `smoke-audio-isolated.py` starts private PipeWire and WirePlumber instances.
+- `smoke-audio-isolated.py` starts private PipeWire and WirePlumber instances;
+  pass the standalone bridge executable with `--bridge`.
 - `smoke-bridge-isolated.py` tests actual A2DP/HFP PCM transport against a mock
   peer; `smoke-auto-bridge-isolated.py` runs the automatic device/profile matrix.
+  Both take PipeWire and `pw-floss` as separate inputs.
 - `smoke-hci-isolated.py` starts the real adapter daemon against the scripted
   private HCI peer in `mock-hci-controller.py` and `mock-hci-socket.c`.
 - `smoke-kde-isolated.py` loads the built BlueDevil UI offscreen with private

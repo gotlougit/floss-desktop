@@ -34,6 +34,7 @@ in {
   pairingAgent = cfg.systemd.user.services.floss-pairing.serviceConfig;
   interopDatabase = cfg.environment.etc."bluetooth/interop_database.conf".source;
   pipewire = cfg.services.pipewire.package.drvPath;
+  pwFloss = packages.pw-floss.drvPath;
   wireplumber = cfg.services.pipewire.wireplumber.package.drvPath;
   systemPackages = map (p: p.name) cfg.environment.systemPackages;
   units = builtins.attrNames cfg.systemd.units;

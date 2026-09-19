@@ -4,8 +4,10 @@ Experimental Floss replacement for the BlueZ daemon with Plasma, PipeWire and
 WirePlumber integration.
 
 This repository is the complete, reproducible source for the integration. It
-fetches pinned revisions from the official Bluetooth, PipeWire, BlueDevil and
-WirePlumber upstream projects and applies the patches stored in `patches/`. No
+fetches pinned revisions from the official Bluetooth, BlueDevil and WirePlumber
+upstream projects and applies the patches stored in `patches/`. PipeWire comes
+unmodified from the pinned nixpkgs with BlueZ disabled; the standalone C
+[`pw-floss`](pw-floss/) client is maintained and built directly here. No
 separately maintained source repository or local checkout is a build input.
 
 ## Build
@@ -40,8 +42,12 @@ To update a component:
 `tools/export-patches.py` exports patches from sibling source checkouts whose
 HEADs match the revisions recorded in the manifest.
 
+`pw-floss` is not a patch or a fork: update and test it directly under
+`pw-floss/`.
+
 ## License
 
 Original material in this repository is licensed under GPL-2.0-only; see
-[LICENSE](LICENSE). Patches and packaged source retain the copyright and license
-terms of their respective upstream projects.
+[LICENSE](LICENSE). The extracted `pw-floss` project is MIT-licensed, matching
+its PipeWire origin. Patches and packaged source retain the copyright and
+license terms of their respective upstream projects.

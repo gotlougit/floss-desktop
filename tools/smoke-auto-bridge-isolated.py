@@ -16,7 +16,7 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--pipewire', required=True, type=Path)
 p.add_argument('--wireplumber', required=True, type=Path)
 p.add_argument('--mock', required=True, type=Path)
-p.add_argument('--bridge', type=Path, help='Optional incremental bridge binary')
+p.add_argument('--bridge', required=True, type=Path, help='Standalone pw-floss binary')
 p.add_argument('--peak-meter', type=Path, help='Compiled pulse-peak-meter.c fixture')
 p.add_argument('--vlc', type=Path, help='Existing VLC executable in /nix/store for corked startup regression')
 p.add_argument('--pulse-tools', type=Path, help='Existing PulseAudio bin directory for pulse-pause regression')
@@ -32,8 +32,8 @@ if not a.inside:
         '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--tmpfs', '/run', '--tmpfs', '/var',
         '--dir', '/sys', '--ro-bind', str(Path(__file__).resolve()), '/smoke.py',
         '--ro-bind', str(a.mock.resolve()), '/mock',
-        '--ro-bind', str((a.bridge or a.pipewire / 'bin/pw-floss').resolve()), '/bridge', '--bind', str(a.output.resolve()), '/report',
-        '--setenv', 'SMOKE_BRIDGE_ORIGIN', str((a.bridge or a.pipewire / 'bin/pw-floss').resolve()),
+        '--ro-bind', str(a.bridge.resolve()), '/bridge', '--bind', str(a.output.resolve()), '/report',
+        '--setenv', 'SMOKE_BRIDGE_ORIGIN', str(a.bridge.resolve()),
         '--setenv', 'SMOKE_DBUS', str(Path(shutil.which('dbus-daemon')).resolve()),
         str(Path(sys.executable).resolve()), '/smoke.py', '--inside', '--pipewire', str(a.pipewire.resolve()),
         '--wireplumber', str(a.wireplumber.resolve()), '--mock', '/mock', '--bridge', '/bridge', '--cases', a.cases, '--output', '/report']
@@ -84,7 +84,7 @@ def nodes():
     return [o.get('info', {}).get('props', {}) for o in graph()
         if o.get('type') == 'PipeWire:Interface:Node' and
         o.get('info', {}).get('props', {}).get('device.api') == 'floss']
-bridge_command = [str(a.bridge or a.pipewire / 'bin/pw-floss'), '--auto', '--adapter', '0']
+bridge_command = [str(a.bridge), '--auto', '--adapter', '0']
 
 def report(name):
     return (a.output / (name + '.log')).read_text()
@@ -483,8 +483,8 @@ finally:
     for log in logs: log.close()
 (a.output / 'summary.json').write_text(json.dumps({'pipewirePackage': str(a.pipewire),
     'wireplumberPackage': str(a.wireplumber),
-    'bridgeExecutable': os.environ.get('SMOKE_BRIDGE_ORIGIN', str(a.bridge or a.pipewire / 'bin/pw-floss')),
-    'bridgeSha256': hashlib.sha256((a.bridge or a.pipewire / 'bin/pw-floss').read_bytes()).hexdigest(),
+    'bridgeExecutable': os.environ.get('SMOKE_BRIDGE_ORIGIN', str(a.bridge)),
+    'bridgeSha256': hashlib.sha256(a.bridge.read_bytes()).hexdigest(),
     'checks': checks,
     'limitations': 'Scripted capability and post-Floss PCM peers only. CVSD/mSBC cases validate their 8/16 kHz bridge contracts, not SCO codec negotiation or bitstreams. Advertised AAC is not proof of actual AAC negotiation or encoding. No controller, radio, or headset.'}, indent=2) + '\n')
 print(json.dumps(checks, indent=2))

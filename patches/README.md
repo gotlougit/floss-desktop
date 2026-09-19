@@ -24,11 +24,13 @@ evidence of a successful build. Remote source hashes are pinned separately in
 `../nix/`. The standalone flake and NixOS module are described in
 [NIXOS.md](../NIXOS.md).
 
-These snapshots include substantial deletions of BlueZ-only implementation,
+The remaining snapshots include deletions of BlueZ-only implementation,
 dependencies, and build configuration. They retain the Floss integration and
 ordinary desktop/audio functionality described in each repository's README.
 The Bluetooth patch adds caller-owned audio sessions, A2DP position feedback,
 and the HFP PCM API and transport changes used by the PipeWire bridge.
+PipeWire is no longer patched: the standalone `pw-floss` project links against
+the upstream PipeWire package built without BlueZ.
 BluezQt remains unchanged and is not required by the patched BlueDevil package.
 
 No Git staging, commits, or source downloads were needed to export the patches.

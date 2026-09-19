@@ -1,25 +1,15 @@
-{ pkgs, sources }:
+{ pkgs }:
 
 let
   inherit (pkgs) lib;
-  source = sources.pipewire;
-  base = pkgs.pipewire.override { bluezSupport = false; };
-  replacedOptions = [ "bluez5" "docs" "man" "installed_tests" "installed_test_prefix" ];
+  upstream = pkgs.pipewire.override { bluezSupport = false; };
+  replacedOptions = [ "docs" "man" "tests" "installed_tests" "installed_test_prefix" ];
 in
-base.overrideAttrs (old: {
-  pname = "pipewire-floss";
-  version = "1.7.0-floss-${builtins.substring 0 12 source.rev}";
+# Keep nixpkgs' upstream source and compatibility patches. Floss supplies
+# Bluetooth audio through the external pw-floss client, so the BlueZ backend
+# and build-only documentation/test dependencies are omitted.
+upstream.overrideAttrs (old: {
   outputs = [ "out" "jack" "dev" ];
-  src = pkgs.fetchFromGitLab {
-    domain = "gitlab.freedesktop.org";
-    owner = "pipewire";
-    repo = "pipewire";
-    inherit (source) rev;
-    hash = "sha256-zGrNtWPQqeimEEE2425FjcpUsVv/d68VMFXeEMrKqf8=";
-  };
-  # Keep the Nix-specific JACK lookup fix; upstream compatibility patches for
-  # the nixpkgs release must not be applied to this independently pinned tree.
-  patches = [ (builtins.head old.patches) ../patches/pipewire-floss.patch ];
   mesonFlags = builtins.filter
     (flag: !lib.any (option: lib.hasPrefix "-D${option}" flag) replacedOptions)
     old.mesonFlags ++ [
@@ -32,9 +22,6 @@ base.overrideAttrs (old: {
   nativeBuildInputs = builtins.filter
     (input: !builtins.elem input [ pkgs.doxygen pkgs.graphviz pkgs.docutils ])
     old.nativeBuildInputs;
-  buildInputs = builtins.filter
-    (input: !builtins.elem input [ pkgs.ldacbt pkgs.modemmanager ])
-    old.buildInputs;
   nativeCheckInputs = [ ];
   doCheck = false;
   doInstallCheck = false;

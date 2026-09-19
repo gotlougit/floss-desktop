@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--project', choices=['bluetooth', 'pipewire', 'bluedevil', 'wireplumber'])
+parser.add_argument('--project', choices=['bluetooth', 'bluedevil', 'wireplumber'])
 parser.add_argument('--no-manifest', action='store_true', help='Leave manifest updates to the final combined export')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent

@@ -1,9 +1,9 @@
 # Building and using Floss desktop on NixOS
 
 This flake fetches pinned upstream sources and applies the patches shipped beside
-it. No separate Bluetooth, PipeWire, BlueDevil, BluezQt or WirePlumber checkout
-is a build input. Copy `flake.nix`, `flake.lock`, `nix/` and `patches/` together
-to use it elsewhere. The supported build platform is currently x86_64-linux.
+it. No separate source checkout is a build input. Copy `flake.nix`, `flake.lock`,
+`nix/`, `patches/`, and `pw-floss/` together to use it elsewhere. The supported
+build platform is currently x86_64-linux.
 Keep the flake's pinned Nixpkgs input: the builds use its matching Qt, KDE and
 PipeWire dependencies. Replacing that pin is a separate compatibility change.
 
@@ -16,8 +16,9 @@ nix build .#stack
 nix flake check --no-build
 ```
 
-The `result/` directory contains links named `floss`, `pipewire`, `wireplumber`,
-and `bluedevil`. Individual targets such as `nix build .#floss` are available.
+The `result/` directory contains links named `floss`, `pipewire`, `pw-floss`,
+`wireplumber`, and `bluedevil`. Individual targets such as
+`nix build .#pw-floss` are available.
 Builds disable test execution and do not start Bluetooth or audio services.
 
 ## Integrate into your NixOS configuration
@@ -58,8 +59,9 @@ system build, using the same Nixpkgs revision avoids mixing KDE releases.
 Importing the module replaces NixOS's stock Bluetooth module, so the existing
 `hardware.bluetooth.enable = true` enables Floss. Remove BlueZ-specific
 `hardware.bluetooth.settings`, plugin, input/network and package overrides.
-The module installs the patched Floss BlueDevil package and selects the patched PipeWire
-and WirePlumber packages. It substitutes the stock BlueDevil desktop package
+The module installs the patched Floss BlueDevil package, upstream PipeWire built
+without BlueZ, the standalone `pw-floss` bridge, and patched WirePlumber. It
+substitutes the stock BlueDevil desktop package
 and omits the old BlueZ/OBEX tools from the system package list. Unrelated
 applications may still have their own BlueZ dependencies or API requirements;
 this stack does not implement `org.bluez` compatibility.

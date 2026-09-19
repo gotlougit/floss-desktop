@@ -34,13 +34,15 @@
           pkgs = import nixpkgs { inherit system; };
           call = file: import file { inherit pkgs sources; };
         in rec {
-          pipewire = call ./nix/pipewire.nix;
+          pipewire = import ./nix/pipewire.nix { inherit pkgs; };
+          pw-floss = import ./nix/pw-floss.nix { inherit pkgs pipewire; };
           bluedevil = call ./nix/bluedevil.nix;
           floss = call ./nix/floss.nix;
           wireplumber = import ./nix/wireplumber.nix { inherit pkgs sources pipewire; };
           stack = pkgs.linkFarm "floss-desktop-stack" [
             { name = "floss"; path = floss; }
             { name = "pipewire"; path = pipewire; }
+            { name = "pw-floss"; path = pw-floss; }
             { name = "wireplumber"; path = wireplumber; }
             { name = "bluedevil"; path = bluedevil; }
           ];

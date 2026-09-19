@@ -6,13 +6,6 @@
     "patchFileHash": "sha256-OukjsPVLsZn/sMplx2rNDphsA/tbrMUVvZeNse70Yrk=",
     "patchBytes": 485615
   },
-  "pipewire": {
-    "url": "https://gitlab.freedesktop.org/pipewire/pipewire.git",
-    "rev": "744a6b547ddb511e46fb41c1e54d033eca4faec9",
-    "patch": "pipewire-floss.patch",
-    "patchFileHash": "sha256-u9lN3ozgD/IX3Shs8CMkKmDBy5E09NQqlztV/fQhJDE=",
-    "patchBytes": 1882407
-  },
   "wireplumber": {
     "url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",
     "rev": "2649ebb4dc37760ed220cb579f4b409c466804e8",

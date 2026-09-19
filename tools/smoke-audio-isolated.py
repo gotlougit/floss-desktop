@@ -11,6 +11,7 @@ import time
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--pipewire', required=True, type=Path)
+parser.add_argument('--bridge', required=True, type=Path)
 parser.add_argument('--wireplumber', required=True, type=Path)
 parser.add_argument('--output', required=True, type=Path)
 args = parser.parse_args()
@@ -81,12 +82,12 @@ with tempfile.TemporaryDirectory(prefix='floss-audio-smoke-') as temporary:
         time.sleep(2)
         assert wireplumber.poll() is None, 'WirePlumber failed to initialize'
         run('initial-status', [str(args.wireplumber / 'bin/wpctl'), 'status'])
-        run('bridge-help', [str(args.pipewire / 'bin/pw-floss'), '--help'])
-        run('bridge-reject-hfp-rate', [str(args.pipewire / 'bin/pw-floss'),
+        run('bridge-help', [str(args.bridge), '--help'])
+        run('bridge-reject-hfp-rate', [str(args.bridge),
             '--profile', 'hfp', '--device', 'AA:BB:CC:DD:EE:FF', '--pcm-rate', '48000'], 64)
-        run('bridge-reject-manual-pcm-rate', [str(args.pipewire / 'bin/pw-floss'),
+        run('bridge-reject-manual-pcm-rate', [str(args.bridge),
             '--profile', 'a2dp', '--device', 'AA:BB:CC:DD:EE:FF', '--pcm-rate', '48000'], 64)
-        absent = run('bridge-no-daemon', [str(args.pipewire / 'bin/pw-floss'),
+        absent = run('bridge-no-daemon', [str(args.bridge),
             '--profile', 'hfp', '--device', 'AA:BB:CC:DD:EE:FF'], 1)
         assert 'org.chromium.bluetooth' in absent.stderr and 'no such name' in absent.stderr.lower(), absent.stderr
         loop = start('synthetic-loopback', [str(args.pipewire / 'bin/pw-loopback'),
