@@ -352,7 +352,7 @@ index a1010df09..78a96847f 100644
 - - Bluetooth debug log, see [here](https://gitlab.freedesktop.org/pipewire/pipewire/-/wikis/Troubleshooting#bluetooth):
 +# Floss Bluetooth integration issue
 +
-+- PipeWire fork revision:
++- PipeWire integration revision:
 +- Floss revision and Linux build configuration:
 +- Distribution, kernel and desktop session:
 +- Adapter and headset model:
@@ -396,9 +396,9 @@ index 6282e8f70..0f7a44b59 100644
 +++ b/README.md
 @@ -1,4 +1,23 @@
 -# PipeWire
-+# PipeWire — Floss desktop fork
++# PipeWire — Floss desktop integration
 +
-+This Linux fork uses **Floss as its only Bluetooth stack**. The normal build
++This Linux integration uses **Floss as its only Bluetooth stack**. The normal build
 +includes `pw-floss`, which sends PCM to Floss; Bluetooth encoding and transport
 +remain in Floss. The former BlueZ SPA plugins, Bluetooth codec implementations,
 +MIDI backend and related dependencies have been removed. ALSA, general PCM
@@ -409,12 +409,12 @@ index 6282e8f70..0f7a44b59 100644
 +Floss does not expose the active PCM format over D-Bus. There is no automatic
 +Bluetooth startup or codec/profile parity yet. The new `--profile hfp` path
 +publishes headset playback and microphone nodes using negotiated mono PCM from
-+the Floss fork: CVSD at 8 kHz or mSBC at 16 kHz. Floss retains voice encoding,
++the Floss integration: CVSD at 8 kHz or mSBC at 16 kHz. Floss retains voice encoding,
 +and HFP does not require guessing a PCM rate. Profile selection remains manual. Read
 +[src/tools/pw-floss.md](src/tools/pw-floss.md) before attempting playback.
 +
 +Linux and libdbus are required; disabling D-Bus is an explicit configuration
-+error. There is no Bluetooth backend switch or BlueZ fallback. These fork
++error. There is no Bluetooth backend switch or BlueZ fallback. These integration
 +changes do not describe upstream PipeWire's supported Bluetooth behavior.
  
  [PipeWire](https://pipewire.org) is a server and user space API to
@@ -556,10 +556,10 @@ index 391b0ce4e..b67724135 100644
  
 -@PAR@ monitor-prop  bluez5.a2dp.opus.pro.bidi.max-bitrate = 160000   # integer
 -PipeWire Opus Pro audio profile duplex max bitrate.
-+This fork uses the `pw-floss` PCM bridge. Floss owns Bluetooth encoding,
++This integration uses the `pw-floss` PCM bridge. Floss owns Bluetooth encoding,
 +codec selection and transmission; PipeWire publishes a PCM sink. This initial
 +bridge requires an explicitly verified S16LE stereo PCM rate for A2DP. HFP
-+uses the Floss fork's negotiated PCM getter to publish mono headset playback
++uses the Floss integration's negotiated PCM getter to publish mono headset playback
 +and microphone nodes. Automatic profile switching is not implemented.
  
 -@PAR@ monitor-prop  bluez5.a2dp.opus.pro.bidi.frame-dms = 400   # integer
@@ -812,7 +812,7 @@ index 836f2ffdf..60445234e 100644
  - WirePlumber, which takes a modular approach:
    It provides another, higher-level API compared to the PipeWire one, and runs Lua scripts that implement the management logic using the said API.
 -  It ships with default scripts and configuration that handle linking policies as well as monitoring and automatic spawning of ALSA, bluez, libcamera and v4l2 devices.
-+  The Floss desktop fork uses WirePlumber for linking policy and ALSA, libcamera and v4l2 monitoring. Bluetooth PCM nodes are published by pw-floss; Floss handles Bluetooth codecs and transport. Automatic Floss startup awaits a verified PCM-format contract.
++  The Floss desktop integration uses WirePlumber for linking policy and ALSA, libcamera and v4l2 monitoring. Bluetooth PCM nodes are published by pw-floss; Floss handles Bluetooth codecs and transport. Automatic Floss startup awaits a verified PCM-format contract.
    The API is available for any process, not only from WirePlumber’s Lua scripts.
  
  ### Node implementation
@@ -839,12 +839,12 @@ index 37badca51..861672095 100644
  pthread_lib = dependency('threads')
 -dbus_dep = dependency('dbus-1', required : get_option('dbus'))
 -summary({'dbus (Bluetooth, rt, portal, pw-reserve)': dbus_dep.found()}, bool_yn: true, section: 'Misc dependencies')
-+# Floss is the only Bluetooth backend in this fork. Never silently omit it.
++# Floss is the only Bluetooth backend in this integration. Never silently omit it.
 +if host_machine.system() != 'linux'
-+  error('This Floss desktop fork requires Linux')
++  error('This Floss desktop integration requires Linux')
 +endif
 +if get_option('dbus').disabled()
-+  error('This Floss desktop fork requires D-Bus; remove -Ddbus=disabled')
++  error('This Floss desktop integration requires D-Bus; remove -Ddbus=disabled')
 +endif
 +dbus_dep = dependency('dbus-1', required : true)
 +summary({'dbus (Floss, rt, portal, pw-reserve)': dbus_dep.found()}, bool_yn: true, section: 'Misc dependencies')
@@ -58886,7 +58886,7 @@ index 2def79257..902f0cb69 100644
    [ 'pw-link', [ 'pw-link.c' ] ],
  ]
  
-+# Floss is the fork's sole Bluetooth audio implementation.
++# Floss is the integration's sole Bluetooth audio implementation.
 +executable('pw-floss',
 +  'pw-floss.c',
 +  install: true,
@@ -60011,7 +60011,7 @@ index 000000000..fd80e8178
 +	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 +}
 +
-+/* The fork's getter reports the live native SCO feeding configuration, not
++/* The integration's getter reports the live native SCO feeding configuration, not
 + * selectable HFP capabilities or the legacy codec notification byte. */
 +static bool get_pcm_config(struct bridge *b, struct hfp_pcm_config *config)
 +{
@@ -61195,7 +61195,7 @@ index 000000000..fcfb16dbb
 +it as a user service. No device address, profile, or PCM rate is needed.
 +
 +Floss selects and runs Bluetooth codecs. PipeWire only mixes and resamples PCM;
-+this fork contains no BlueZ backend or Bluetooth encoder. Codec availability is
++this integration contains no BlueZ backend or Bluetooth encoder. Codec availability is
 +determined by the Floss build and headset negotiation, not PipeWire capabilities.
 +
 +## Automatic profile selection
@@ -61246,7 +61246,7 @@ index 000000000..fcfb16dbb
 +
 +The bridge confirms the configuration generation after connecting the fixed
 +PCM socket. A2DP generation changes trigger transport refresh; socket closure
-+invalidates HFP. Floss must be this fork: the bridge rejects missing format APIs
++invalidates HFP. Floss must be this integration: the bridge rejects missing format APIs
 +rather than guessing a sample rate. `--pcm-rate` is no longer accepted.
 +
 +A diagnostic single session remains available:

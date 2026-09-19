@@ -1,12 +1,8 @@
-# Building and using the Floss desktop fork on NixOS
-
-For your `kratos` configuration, use the tailored [INST.md](INST.md).
-Read [RUNTIME-STATUS.md](RUNTIME-STATUS.md) for smoke-test evidence and remaining
-hardware limitations before activation.
+# Building and using Floss desktop on NixOS
 
 This flake fetches pinned upstream sources and applies the patches shipped beside
-it. The Bluetooth, PipeWire, BlueDevil, BluezQt and WirePlumber reference checkouts
-are not build inputs. Copy `flake.nix`, `flake.lock`, `nix/` and `patches/` together
+it. No separate Bluetooth, PipeWire, BlueDevil, BluezQt or WirePlumber checkout
+is a build input. Copy `flake.nix`, `flake.lock`, `nix/` and `patches/` together
 to use it elsewhere. The supported build platform is currently x86_64-linux.
 Keep the flake's pinned Nixpkgs input: the builds use its matching Qt, KDE and
 PipeWire dependencies. Replacing that pin is a separate compatibility change.
@@ -23,15 +19,6 @@ nix flake check --no-build
 The `result/` directory contains links named `floss`, `pipewire`, `wireplumber`,
 and `bluedevil`. Individual targets such as `nix build .#floss` are available.
 Builds disable test execution and do not start Bluetooth or audio services.
-
-In this workspace the new flake files may not yet be Git-tracked. Use a small
-snapshot to avoid Nix excluding them or copying the large reference checkouts:
-
-```sh
-python3 tools/nix-snapshot.py /tmp/floss-desktop-flake
-nix build path:/tmp/floss-desktop-flake#stack
-nix flake check path:/tmp/floss-desktop-flake --no-build
-```
 
 ## Integrate into your NixOS configuration
 
@@ -71,7 +58,7 @@ system build, using the same Nixpkgs revision avoids mixing KDE releases.
 Importing the module replaces NixOS's stock Bluetooth module, so the existing
 `hardware.bluetooth.enable = true` enables Floss. Remove BlueZ-specific
 `hardware.bluetooth.settings`, plugin, input/network and package overrides.
-The module installs the Floss BlueDevil fork and selects the patched PipeWire
+The module installs the patched Floss BlueDevil package and selects the patched PipeWire
 and WirePlumber packages. It substitutes the stock BlueDevil desktop package
 and omits the old BlueZ/OBEX tools from the system package list. Unrelated
 applications may still have their own BlueZ dependencies or API requirements;
@@ -165,8 +152,8 @@ it disabled unless that path is known to work on your controller.
 
 There is no active-seat arbitration, simultaneous independent headset output,
 LE Audio/LC3 voice, OBEX transfer or general `org.bluez` compatibility. Do not run
-BlueZ and Floss against the same controller. See [RUNTIME-STATUS.md](RUNTIME-STATUS.md)
-for the exact checks and their limits.
+BlueZ and Floss against the same controller. Isolated tests do not establish
+physical controller, radio, headset or production-system behavior.
 
 The manager alone receives `/dev/rfkill` access in its device sandbox; the udev
 rule grants the private `floss` group access. Desktop processes use the manager's

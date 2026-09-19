@@ -1,46 +1,47 @@
 # Floss desktop for NixOS
 
-Experimental Floss replacement for the BlueZ daemon and Plasma/PipeWire integration.
-Start with [INST.md](INST.md). Builds and isolated mock checks pass; physical
-controller/headset operation and production service confinement remain unverified.
-Trust/block controls and file transfer are not implemented.
+Experimental Floss replacement for the BlueZ daemon with Plasma, PipeWire and
+WirePlumber integration.
 
-## Source repositories
+This repository is the complete, reproducible source for the integration. It
+fetches pinned revisions from the official Bluetooth, PipeWire, BlueDevil and
+WirePlumber upstream projects and applies the patches stored in `patches/`. No
+separately maintained source repository or local checkout is a build input.
 
-All modified code is published on the `floss` branch:
-
-- [Bluetooth / Floss](https://github.com/gotlougit/floss-bluetooth/tree/floss)
-- [PipeWire](https://github.com/gotlougit/floss-pipewire/tree/floss)
-- [BlueDevil](https://github.com/gotlougit/floss-bluedevil/tree/floss)
-- [WirePlumber](https://github.com/gotlougit/floss-wireplumber/tree/floss)
-
-`published-projects.json` records exact fork commits and their upstream bases.
-BluezQt is unchanged and does not need a fork. Upstream copyright and license
-notices remain in their respective projects.
-
-## Reproducible packaging
-
-This flake builds pinned remote upstream sources with the portable changes in
-`patches/`. It does not reference local checkouts or moving fork branches.
-The fork commits contain those same changes. This packaging preserves the
-previously validated build inputs and does not require downloading Git histories.
+## Build
 
 ```sh
 nix flake check --no-build
 nix build .#stack
 ```
 
-Import `nixosModules.default`, enable `hardware.bluetooth.enable` and set
-`hardware.bluetooth.floss.users` to the intended local users. See INST.md for the
-complete configuration, persistence and rollback instructions.
+The stack currently targets x86_64 Linux. Builds and isolated mock checks pass,
+but physical controller/headset operation and production service confinement
+remain unverified. Trust/block controls, file transfer, active-seat arbitration,
+general `org.bluez` compatibility and multi-device audio are not implemented.
 
-To update code, develop in the matching source fork, export the diff against the
-upstream revision in `patches/sources.json`, and refresh the patch hash and size.
-Bluetooth changes are split between native, Rust service and codec patches.
-`tools/export-patches.py` automates this with sibling checkouts at the recorded
-upstream bases. Source forks and the packaging repository must be updated together.
+See [NIXOS.md](NIXOS.md) for installation, operation and rollback guidance.
 
-See [BUILD-STATUS.md](BUILD-STATUS.md) and [RUNTIME-STATUS.md](RUNTIME-STATUS.md)
-for validation scope and known limitations.
+## Source updates
 
-See [September 19 fixes](FIXES-2026-09-19.md) for KDE output visibility, AAC short-read framing, state-file persistence, and upgrading an existing installation.
+[`patches/sources.json`](patches/sources.json) is the sole source manifest. For
+each component it records the official upstream URL, pinned revision, patch file,
+patch size and patch digest. Bluetooth service and codec changes are split into
+additional patches because the Nix build consumes those source sets separately.
+
+To update a component:
+
+1. Fetch the official upstream repository and check out the recorded revision.
+2. Apply the component's patches in manifest order.
+3. Rebase or otherwise adapt the changes to the new upstream revision.
+4. Export the resulting diff, then update its size and digest in the manifest.
+5. Update the matching Nix source hash and run the build and checks above.
+
+`tools/export-patches.py` exports patches from sibling source checkouts whose
+HEADs match the revisions recorded in the manifest.
+
+## License
+
+Original material in this repository is licensed under GPL-2.0-only; see
+[LICENSE](LICENSE). Patches and packaged source retain the copyright and license
+terms of their respective upstream projects.

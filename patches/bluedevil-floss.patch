@@ -70,14 +70,14 @@ index b819ed7f..2e6d7741 100644
 -BlueDevil runtime dependencies:
 -    -bluez5
 -        -General Bluetooth management
-+Floss-only BlueDevil fork
++Floss-only BlueDevil integration
 +========================
  
 -    -bluez-obexd
 -        -Be able to "Browse File" aka kio_obexftp
 -        -Be able to "Send Files" (bluedevil-sendfile)
 -        -Be able to receive files
-+This fork retains Plasma's Bluetooth tray and System Settings UI and connects
++This integration retains Plasma's Bluetooth tray and System Settings UI and connects
 +both directly to Floss. It does not depend on BluezQt, provide a BlueZ-compatible
 +API, or support a second Bluetooth backend.
  
@@ -88,7 +88,7 @@ index b819ed7f..2e6d7741 100644
 +toolchain downloads or runtime checks have been run for these changes.
 +
 +The upstream translation catalogs and handbook source remain for provenance;
-+the old handbook is not installed and does not describe this fork's feature set.
++the old handbook is not installed and does not describe this integration's feature set.
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
 index 2c1d256c..1665e1b9 100644
 --- a/src/CMakeLists.txt
@@ -12314,9 +12314,9 @@ index 00000000..b4107233
 --- /dev/null
 +++ b/src/floss/README.md
 @@ -0,0 +1,134 @@
-+# Floss-only BlueDevil fork
++# Floss-only BlueDevil integration
 +
-+This fork keeps Plasma's Bluetooth tray, expandable device rows, toolbar,
++This integration keeps Plasma's Bluetooth tray, expandable device rows, toolbar,
 +Bluetooth System Settings list/detail pages and forget confirmation, while
 +replacing their Bluetooth implementation with native Floss D-Bus calls.
 +There is one backend and no backend-selection environment variable. Set
@@ -12334,7 +12334,7 @@ index 00000000..b4107233
 +targets have been removed. The unsupported UI controls were removed with them.
 +The generic applet and KCM smoke-test definitions remain for future use;
 +no tests have been run. BluezQt is no longer a build or runtime dependency of
-+this fork. The checkout requires Qt 6.11, KF6
++this integration. The checkout requires Qt 6.11, KF6
 +6.30 and Plasma 6.7.90; packaging must align those versions.
 +
 +Implemented paths cover manager Start/Stop, discovery, initial bonded/connected
@@ -12396,7 +12396,7 @@ index 00000000..b4107233
 +
 +* One configured adapter; no adapter chooser, manager hotplug callback model,
 +  platform-wide rfkill switch control, or multi-session/seat arbitration. The session name only
-+  coordinates this fork's processes in one session, not other Floss clients.
++  coordinates this integration's processes in one session, not other Floss clients.
 +* The standalone `bluedevil-floss-pairing` process keeps PairingWindow loaded
 +  without the tray or KCM. It stays hidden until a request arrives and shares
 +  the same session responder election with those views. It does not take

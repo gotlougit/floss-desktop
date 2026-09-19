@@ -388,7 +388,7 @@ index 5acb223..7763c86 100644
 -`pipewire-props(7)`_.
 -
 -.. _pipewire-props(7): https://docs.pipewire.org/page_man_pipewire-props_7.html
-+This fork uses Floss and the external ``pw-floss`` PCM bridge for Bluetooth
++This integration uses Floss and the external ``pw-floss`` PCM bridge for Bluetooth
 +audio. The BlueZ monitors, codec settings, profile switching and MIDI support
 +have been removed. See :ref:`config_floss` for the current implementation,
 +configuration and remaining integration work.
@@ -488,7 +488,7 @@ index d06b07c..926b021 100644
 -
 -   :wants: ``monitor.bluez.seat-monitoring``
 +The external Floss PCM bridge publishes ordinary audio sink nodes handled by
-+standard policy. There is no Bluetooth monitor feature in this fork.
++standard policy. There is no Bluetooth monitor feature in this integration.
 +See :ref:`config_floss` for the bridge contract and lifecycle limitations.
  
  Video
@@ -551,7 +551,7 @@ index 8f7b7e9..316205d 100644
 -     }
 -   ]
 +Bluetooth rules from upstream WirePlumber do not migrate to this Floss-only
-+fork. BlueZ monitors and their settings have been removed. See
++integration. BlueZ monitors and their settings have been removed. See
 +:ref:`config_floss` for the external PCM bridge integration.
  
  See also :ref:`config_modifying_configuration_rules`.
@@ -578,7 +578,7 @@ index 8f7b7e9..316205d 100644
 -    }
 +If you had configuration scripts setting ``alsa_monitor.properties``, place
 +those properties in the ``monitor.alsa.properties`` configuration section.
-+BlueZ properties have no replacement in this fork; codec and profile handling
++BlueZ properties have no replacement in this integration; codec and profile handling
 +belongs to Floss.
  
  See also :ref:`config_modifying_configuration_static`.
@@ -765,7 +765,7 @@ index c5d5193..f2efe9f 100644
  
  When no particular profile is specified, the ``main`` profile is loaded.
 +External Floss bridge sinks are managed by the policy instance; there is no
-+separate Bluetooth monitor instance in this fork.
++separate Bluetooth monitor instance in this integration.
  
 -For multi-instance configuration, the default ``wireplumber.conf`` specifies 4
 +For multi-instance configuration, the default ``wireplumber.conf`` specifies 3
@@ -3553,7 +3553,7 @@ index 0000000..79a29fb
 +Floss desktop audio
 +===================
 +
-+This fork uses Floss for Bluetooth. The normal ``main`` profile manages the
++This integration uses Floss for Bluetooth. The normal ``main`` profile manages the
 +``Audio/Sink`` and ``Audio/Source`` nodes published by ``pw-floss --auto``.
 +Floss owns Bluetooth codec encoding and radio transport. PipeWire mixes and
 +converts application audio to the negotiated PCM format. WirePlumber applies
@@ -3596,7 +3596,7 @@ index 0000000..79a29fb
 +For a multi-instance setup, the ``policy`` instance manages bridge nodes.
 +Remove old ``main-floss`` profile selections and configuration referring to
 +``monitor.bluez*`` or ``bluez5.*`` properties, which have no implementation in
-+this fork. The system deployment must start Floss and the automatic bridge;
++this integration. The system deployment must start Floss and the automatic bridge;
 +selecting a WirePlumber profile alone does not start either process.
 +
 +The existing ``node.features.audio.mono`` setting applies to Floss sinks.

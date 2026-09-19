@@ -1341,7 +1341,7 @@ index 0000000000..6137a81713
 @@ -0,0 +1,193 @@
 +# Linux HFP PCM bridge
 +
-+This fork exposes the existing Floss software SCO audio path to a desktop audio
++This integration exposes the existing Floss software SCO audio path to a desktop audio
 +server. Floss already decodes microphone SCO packets to PCM and encodes playback
 +PCM to SCO in `stack/btm/btm_sco.cc` and `btm_sco_hci.cc`. mSBC and LC3 processing
 +remain in Floss. For CVSD, the controller performs the codec conversion and the
@@ -1498,9 +1498,9 @@ index 0000000000..6137a81713
 +Floss. This first integration deliberately terminates on PCM write backpressure
 +instead of implementing another audio buffering/clock controller. Actual
 +latency, loss recovery, kernel transport behavior and headset interoperability
-+remain unverified on physical hardware. The original source-only repair pass
-+did not run builds or tests; subsequent build and isolated mock-test evidence
-+is tracked in the packaging repository’s BUILD-STATUS.md and RUNTIME-STATUS.md.
++remain unverified on physical hardware. Build and isolated mock-test evidence
++does not establish physical controller, radio or headset behavior. These checks
++remain separate from hardware validation.
 +
 +## Automatic desktop discovery and A2DP format
 +

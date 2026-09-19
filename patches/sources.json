@@ -3,22 +3,22 @@
     "url": "https://invent.kde.org/plasma/bluedevil.git",
     "rev": "c15cdd83448c7a62690f57c1dde723a5532f5eb8",
     "patch": "bluedevil-floss.patch",
-    "patchFileHash": "sha256-8lGZ9KVHxticjRlvhx3LtAflnSK/XNopzUywIRhmsAQ=",
-    "patchBytes": 485566
+    "patchFileHash": "sha256-OukjsPVLsZn/sMplx2rNDphsA/tbrMUVvZeNse70Yrk=",
+    "patchBytes": 485615
   },
   "pipewire": {
     "url": "https://gitlab.freedesktop.org/pipewire/pipewire.git",
     "rev": "744a6b547ddb511e46fb41c1e54d033eca4faec9",
     "patch": "pipewire-floss.patch",
-    "patchFileHash": "sha256-jzkQWIuFbHdJbr/DJfvw6CMhK1xmJzcJqXaxnXogObQ=",
-    "patchBytes": 1882302
+    "patchFileHash": "sha256-u9lN3ozgD/IX3Shs8CMkKmDBy5E09NQqlztV/fQhJDE=",
+    "patchBytes": 1882407
   },
   "wireplumber": {
     "url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",
     "rev": "2649ebb4dc37760ed220cb579f4b409c466804e8",
     "patch": "wireplumber-floss.patch",
-    "patchFileHash": "sha256-FTLV+dcJTViYkwPLrPpfyBwY1oVnEtWjHB7Fv3ViYiw=",
-    "patchBytes": 130816
+    "patchFileHash": "sha256-AJinF4IH4tVC4gT4tAoP45W3u0FiYLllbh2iMZnxnKU=",
+    "patchBytes": 130865
   },
   "bluetooth": {
     "url": "https://android.googlesource.com/platform/packages/modules/Bluetooth",
@@ -32,8 +32,8 @@
         "files": [
           "system/gd/rust/linux/"
         ],
-        "patchBytes": 79447,
-        "patchFileHash": "sha256-ahEHp0mRlBggzJLWyeQN6HfX/168s+PkCipS/kooQC8="
+        "patchBytes": 79417,
+        "patchFileHash": "sha256-5shdum+hnAKn8CSLR60LANMBw/rd9YFQKBX7YRwz1Z4="
       },
       {
         "patch": "bluetooth-codec-service.patch",
