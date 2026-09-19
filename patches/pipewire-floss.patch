@@ -7667,6 +7667,49 @@ index 71bb83838..265bf0df3 100644
    have_vulkan = false
    vulkan_dep = dependency('vulkan', version : '>= 1.2.170', required: get_option('vulkan'))
    if vulkan_dep.found()
+diff --git a/spa/plugins/audioconvert/audioconvert.c b/spa/plugins/audioconvert/audioconvert.c
+index b6f68773b..963f89b1d 100644
+--- a/spa/plugins/audioconvert/audioconvert.c
++++ b/spa/plugins/audioconvert/audioconvert.c
+@@ -3526,17 +3526,9 @@ static void capture_state(struct impl *impl, struct port *port)
+ 	struct gaps_state *gs = port->id < SPA_AUDIO_MAX_CHANNELS ? impl->gaps.states[port->id] : NULL;
+ 
+ 	if (gs != NULL && port->is_dsp && port->last_buffer < port->n_buffers) {
+-		struct buffer *buf = &port->buffers[port->last_buffer];
+-		uint32_t offs, size;
+-		float *s;
+-		struct spa_data *bd = &buf->buf->datas[0];
+-
+-		offs = SPA_MIN(bd->chunk->offset, bd->maxsize);
+-		size = SPA_MIN(bd->maxsize - offs, bd->chunk->size);
+-		s = SPA_PTROFF(bd->data, offs, float);
+-		size /= sizeof(float);
+-
+-		spa_history_push(&gs->hist, s, size);
++		/* The previous input buffer has been returned to its owner and may
++		 * already be unmapped when IO is removed. History is copied by the
++		 * gap stage while processing, never from a borrowed buffer here. */
+ 
+ 		port->ramp_start = true;
+ 		port->last_buffer = SPA_ID_INVALID;
+diff --git a/spa/plugins/audioconvert/gaps-ops-c.c b/spa/plugins/audioconvert/gaps-ops-c.c
+index 44268136e..b1065e462 100644
+--- a/spa/plugins/audioconvert/gaps-ops-c.c
++++ b/spa/plugins/audioconvert/gaps-ops-c.c
+@@ -55,8 +55,12 @@ static int run_gap_check_ramp(struct gaps *gaps, uint32_t c, const float * SPA_R
+ 		bool *empty)
+ {
+ 	struct gaps_state *s = gaps->states[c];
+-	if (s->mode == GAPS_MODE_ZERO || s->mode == GAPS_MODE_NORMAL)
++	/* Preserve the last samples while the input buffer is still owned.
++	 * Disconnect fades must not dereference it after it has been returned. */
++	if (s->mode == GAPS_MODE_ZERO || s->mode == GAPS_MODE_NORMAL) {
++		spa_history_push(&s->hist, src[c], n_samples);
+ 		return 0;
++	}
+ 	*empty = false;
+ 	return 1;
+ }
 diff --git a/spa/plugins/bluez5/README-MIDI.md b/spa/plugins/bluez5/README-MIDI.md
 deleted file mode 100644
 index 45d092c2c..000000000
@@ -59615,10 +59658,10 @@ index a2c9802e4..43776a26f 100644
  	pw_init(0, NULL);
 diff --git a/src/tools/pw-floss.c b/src/tools/pw-floss.c
 new file mode 100644
-index 000000000..6490f5822
+index 000000000..91af1ca78
 --- /dev/null
 +++ b/src/tools/pw-floss.c
-@@ -0,0 +1,1499 @@
+@@ -0,0 +1,1503 @@
 +/* PipeWire */
 +/* SPDX-License-Identifier: MIT */
 +
@@ -60562,7 +60605,9 @@ index 000000000..6490f5822
 +            b->hfp && !b->voice_primed ? -1.0 : level, now);
 +    if (b->failed) goto done;
 +    if (!b->hfp && level > 0.100) {
-+        fail(b, "A2DP measured transport buffering exceeded 100 ms");
++        /* Drop this graph quantum until the transport catches up. An xrun
++         * must not destroy the device and move all clients to another sink.
++         * The position watchdog still detects a permanently stalled peer. */
 +        goto done;
 +    }
 +    if (level >= 0.0) {
@@ -60572,7 +60617,7 @@ index 000000000..6490f5822
 +    }
 +    if (b->hfp) {
 +        if (size > b->queue_limit - b->voice_queued) {
-+            fail(b, "voice graph exceeded bounded jitter capacity");
++            /* A late graph burst is an xrun, not a device disconnect. */
 +            goto done;
 +        }
 +        write_pos = (b->voice_read_pos + b->voice_queued) % QUEUE_SIZE;
@@ -60582,7 +60627,7 @@ index 000000000..6490f5822
 +        flush_audio(b);
 +        if (b->failed) goto done;
 +        if (size > b->queue_limit - b->queued) {
-+            fail(b, "A2DP transport exceeded bounded jitter capacity");
++            /* Keep the bounded queue and the endpoint on transient overruns. */
 +            goto done;
 +        }
 +        write_pos = (b->read_pos + b->queued) % QUEUE_SIZE;
@@ -60849,12 +60894,14 @@ index 000000000..6490f5822
 +        dbus_pending_call_unref(b->position_call);
 +        b->position_call = NULL;
 +    }
-+    if (b->audio_fd >= 0) { close(b->audio_fd); b->audio_fd = -1; }
 +    if (b->session) {
 +        bool_reply(call(b, "StopAudioSession", DBUS_TYPE_UINT64, &b->session,
 +            DBUS_TYPE_OBJECT_PATH, &owner, DBUS_TYPE_INVALID), &stopped);
 +        b->session = 0;
 +    }
++    /* Socket closure also requests a native stop. Release the lease first:
++     * otherwise the second stop can race the suspend and disconnect A2DP. */
++    if (b->audio_fd >= 0) { close(b->audio_fd); b->audio_fd = -1; }
 +    b->queued = b->capture_queued = b->voice_queued = 0;
 +    b->read_pos = b->capture_read_pos = b->voice_read_pos = b->voice_credit = 0;
 +    b->voice_primed = b->capture_primed = b->position_valid = false;

@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <time.h>
 #include <assert.h>
+#include <poll.h>
 
 static volatile sig_atomic_t running = 1;
 static void quit(int sig) { (void)sig; running = 0; }
@@ -67,6 +68,7 @@ int main(int argc, char **argv) {
     uint32_t hfp_rate = !strcmp(kind, "cvsd") ? 8000 : 16000;
     uint32_t a2dp_rate = aac ? 44100 : 48000;
     unsigned char a2dp_channels = !strcmp(kind, "mono") ? 1 : 2;
+    int stall_ticks = 0;
     int present = 1, pcm = -1, hfp = 0, active = 0, release_ticks = 0;
     uint64_t token = 0, next_token = 100, received = 0, total[2] = {0}, nonzero[2] = {0};
     char owner[256] = "", callback[256] = "", command[64] = "", last_command[64] = "";
@@ -85,6 +87,7 @@ int main(int argc, char **argv) {
             snprintf(last_command, sizeof(last_command), "%s", command);
             printf("control=%s\n", command);
             if (!strcmp(command, "offline")) { present = 0; removed(bus, owner, callback); if (pcm >= 0) { close(pcm); pcm = -1; } }
+            else if (!strcmp(command, "stall")) stall_ticks = 35;
             else if (!strcmp(command, "online")) present = 1;
             else if (!strcmp(command, "second")) present = 2;
             else if (!strcmp(command, "speaker")) mic = 0;
@@ -159,6 +162,11 @@ int main(int argc, char **argv) {
                 uint64_t requested; const char *path;
                 assert(dbus_message_get_args(m, NULL, DBUS_TYPE_UINT64, &requested, DBUS_TYPE_OBJECT_PATH, &path, DBUS_TYPE_INVALID));
                 assert(token && requested == token && !strcmp(path, callback));
+                if (pcm >= 0) {
+                    struct pollfd peer = {.fd = pcm, .events = POLLRDHUP};
+                    assert(poll(&peer, 1, 0) >= 0);
+                    assert(!(peer.revents & (POLLHUP | POLLRDHUP)));
+                }
                 printf("stop profile=%s token=%llu received=%llu\n", hfp ? "hfp" : "a2dp", (unsigned long long)token, (unsigned long long)received);
                 token = 0; active = 0; release_ticks = !strcmp(kind, "delayed") ? 20 : 0; if (pcm >= 0) { close(pcm); pcm = -1; }
                 dbus_message_append_args(reply, DBUS_TYPE_BOOLEAN, &yes, DBUS_TYPE_INVALID);
@@ -166,7 +174,7 @@ int main(int argc, char **argv) {
             dbus_connection_send(bus, reply, NULL); dbus_connection_flush(bus); dbus_message_unref(reply); dbus_message_unref(m);
         }
         if (pcm < 0 && active) pcm = accept4(sockets[hfp], NULL, NULL, SOCK_NONBLOCK);
-        if (pcm >= 0) {
+        if (pcm >= 0 && stall_ticks == 0) {
             unsigned char data[8192]; ssize_t n; size_t period = hfp ? hfp_rate / 100 * 2 : a2dp_rate / 100 * a2dp_channels * 2;
             n = recv(pcm, data, period, MSG_DONTWAIT);
             if (n > 0) { if (mono_samples && !hfp) fwrite(data, 1, n, mono_samples); received += n; total[hfp] += n; for (ssize_t i = 0; i < n; i++) if (data[i]) nonzero[hfp]++; }
@@ -176,6 +184,7 @@ int main(int argc, char **argv) {
                 send(pcm, tone, count * 2, MSG_NOSIGNAL | MSG_DONTWAIT);
             }
         }
+        if (stall_ticks > 0) stall_ticks--;
         if (release_ticks > 0) release_ticks--;
         deadline.tv_nsec += 10000000; if (deadline.tv_nsec >= 1000000000) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000; }
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);

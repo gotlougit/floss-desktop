@@ -17,6 +17,7 @@ p.add_argument('--pipewire', required=True, type=Path)
 p.add_argument('--wireplumber', required=True, type=Path)
 p.add_argument('--mock', required=True, type=Path)
 p.add_argument('--bridge', type=Path, help='Optional incremental bridge binary')
+p.add_argument('--pulse-tools', type=Path, help='Existing PulseAudio bin directory for pulse-pause regression')
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--cases', default='sbc,aac,speaker,mono,cvsd,msbc,delayed,hfp-only,denied,lifecycle,defaults')
 p.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
@@ -34,6 +35,8 @@ if not a.inside:
         '--setenv', 'SMOKE_DBUS', str(Path(shutil.which('dbus-daemon')).resolve()),
         str(Path(sys.executable).resolve()), '/smoke.py', '--inside', '--pipewire', str(a.pipewire.resolve()),
         '--wireplumber', str(a.wireplumber.resolve()), '--mock', '/mock', '--bridge', '/bridge', '--cases', a.cases, '--output', '/report']
+    if a.pulse_tools:
+        command += ['--pulse-tools', str(a.pulse_tools.resolve())]
     sys.exit(subprocess.call(command))
 
 for name in ('/tmp/runtime', '/tmp/config', '/tmp/state', '/tmp/cache', '/tmp/data', '/var/run/bluetooth/audio'):
@@ -136,7 +139,54 @@ try:
         '--playback-props=media.class=Audio/Source node.name=test_builtin_mic node.pause-on-idle=true priority.session=2009'])
     Path('/tmp/music.raw').write_bytes(b''.join(struct.pack('<hh', 8000 if i % 120 < 60 else -8000,
         8000 if i % 120 < 60 else -8000) for i in range(48000 * 40)))
-    for kind in (item for item in a.cases.split(',') if item not in ('lifecycle', 'denied', 'hfp-only', 'defaults')):
+    if 'jitter' in a.cases.split(','):
+        for kind, profile in [('speaker', 'a2dp'), ('hfp-only', 'hfp')]:
+            mock, bridge = begin(kind, 'jitter-' + kind)
+            ids = node_ids()
+            sink = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Sink')
+            play = playback('jitter-player', sink)
+            time.sleep(1)
+            for cycle in range(3):
+                control('stall')
+                time.sleep(.6)
+                assert bridge.poll() is None, 'bridge died during temporary transport stall'
+                assert node_ids() == ids, 'temporary transport stall replaced endpoint'
+                assert starts('mock-jitter-' + kind, profile) == 1, 'transport was restarted'
+                control('online')
+                time.sleep(.4)
+            stop(play)
+            finish(mock, bridge)
+            checks.append({'case': 'jitter', 'kind': kind, 'cycles': 3, 'stableNodeIds': True})
+    if 'pulse-pause' in a.cases.split(','):
+        assert a.pulse_tools, '--pulse-tools is required'
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        start('pulse', [str(a.pipewire / 'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        mock, bridge = begin('aac', 'pulse-pause')
+        sink = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Sink')
+        ids = node_ids()
+        play = start('pulse-player', [str(a.pulse_tools / 'pacat'), '--raw', '--playback',
+            '--rate=48000', '--channels=2', '--format=s16le', '--latency-msec=90',
+            '--device=' + sink, '/tmp/music.raw'])
+        for cycle in range(8):
+            time.sleep(.5)
+            subprocess.run([str(a.pulse_tools / 'pactl'), 'suspend-sink', sink, '1'], env=env, check=True, timeout=5)
+            time.sleep(.2)
+            assert bridge.poll() is None, ('bridge crashed on suspension', cycle)
+            subprocess.run([str(a.pulse_tools / 'pactl'), 'suspend-sink', sink, '0'], env=env, check=True, timeout=5)
+            inputs = subprocess.check_output([str(a.pulse_tools / 'pactl'), 'list', 'short', 'sink-inputs'], env=env, text=True)
+            stream_id = inputs.split()[0]
+            subprocess.run([str(a.pulse_tools / 'pactl'), 'move-sink-input', stream_id, 'test_builtin_feeder'], env=env, check=True, timeout=5)
+            time.sleep(.2)
+            assert bridge.poll() is None, ('bridge crashed on unlink', cycle)
+            subprocess.run([str(a.pulse_tools / 'pactl'), 'move-sink-input', stream_id, sink], env=env, check=True, timeout=5)
+            assert node_ids() == ids, 'pause replaced Bluetooth nodes'
+        stop(play)
+        time.sleep(2)
+        assert bridge.poll() is None, 'bridge crashed on player disconnect'
+        finish(mock, bridge)
+        checks.append({'case': 'pulse-pause', 'cycles': 8, 'stableNodeIds': True})
+    for kind in (item for item in a.cases.split(',') if item not in ('lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()
