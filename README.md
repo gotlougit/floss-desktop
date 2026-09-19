@@ -1,14 +1,36 @@
 # Floss desktop for NixOS
 
-Experimental Floss replacement for the BlueZ daemon with Plasma, PipeWire and
-WirePlumber integration.
+Floss is the codename for the Linux path inside of Android's [Bluetooth stack](https://chromeos.dev/en/posts/androids-bluetooth-stack-fluoride-comes-to-chromeos)
+that was built as part of unifying ChromeOS with Android. As a side effect,
+it was theoretically possible to use the Android implementation of Bluetooth
+in place of BlueZ, the traditional Bluetooth daemon used on Linux.
 
-This repository is the complete, reproducible source for the integration. It
-fetches pinned revisions from the official Bluetooth, BlueDevil and WirePlumber
-upstream projects and applies the patches stored in `patches/`. PipeWire comes
-unmodified from the pinned nixpkgs with BlueZ disabled; the standalone C
-[`pw-floss`](pw-floss/) client is maintained and built directly here. No
-separately maintained source repository or local checkout is a build input.
+I spent some time and came up with this: a NixOS module that can set up forked
+Wireplumber and Bluedevil (the Bluetooth interface code for KDE Plasma) and allow
+using Floss instead of BlueZ. I have been dogfooding it and will keep updating the
+patches accordingly. For now my main usage is with Bluetooth audio devices.
+
+## Architecture
+
+The flake assembles a patched Floss daemon, BlueDevil and WirePlumber, an
+upstream PipeWire build with BlueZ disabled, and the standalone `pw-floss`
+bridge. At the system level, `btmanagerd` and `btadapterd` own the Bluetooth
+controller and expose Floss over D-Bus; a separate codec service handles AAC.
+
+In each desktop session, the patched BlueDevil provides the Plasma UI, pairing
+prompts and reconnect policy. `pw-floss` controls Floss over D-Bus, transfers
+PCM through Unix sockets, and publishes normal PipeWire sink/source nodes for
+WirePlumber to route. Floss therefore remains responsible for Bluetooth
+profiles, codecs and transport, while PipeWire handles desktop audio mixing and
+resampling. The NixOS module supplies the service accounts, permissions, D-Bus
+policy, systemd units and package substitutions that connect these pieces.
+
+## LLM usage disclosure
+
+Almost the entire codebase is LLM owned. As the foundations are solid enough,
+and the alterations required involve swapping out BlueZ for Floss, I believe
+it is a decent enough start to get a more secure Bluetooth stack on Linux with
+little effort.
 
 ## Build
 
