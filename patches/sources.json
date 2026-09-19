@@ -10,8 +10,8 @@
     "url": "https://gitlab.freedesktop.org/pipewire/pipewire.git",
     "rev": "744a6b547ddb511e46fb41c1e54d033eca4faec9",
     "patch": "pipewire-floss.patch",
-    "patchFileHash": "sha256-pKd4gvHmkoSAg23Pumj1Sgf+jtSv4D5gnj8TL8CEnCQ=",
-    "patchBytes": 1881667
+    "patchFileHash": "sha256-jzkQWIuFbHdJbr/DJfvw6CMhK1xmJzcJqXaxnXogObQ=",
+    "patchBytes": 1882302
   },
   "wireplumber": {
     "url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",

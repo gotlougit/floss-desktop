@@ -58815,7 +58815,7 @@ index de39cd5f8..2b90a2fea 100644
  	}
  }
 diff --git a/src/modules/module-protocol-pulse/pulse-server.c b/src/modules/module-protocol-pulse/pulse-server.c
-index 7f19739a1..72293a81e 100644
+index 7f19739a1..d7a7697aa 100644
 --- a/src/modules/module-protocol-pulse/pulse-server.c
 +++ b/src/modules/module-protocol-pulse/pulse-server.c
 @@ -1001,38 +1001,10 @@ static void manager_metadata(void *data, struct pw_manager_object *o,
@@ -58857,7 +58857,19 @@ index 7f19739a1..72293a81e 100644
  	}
  }
  
-@@ -3634,8 +3606,6 @@ static int fill_card_info(struct client *client, struct message *m,
+@@ -2164,7 +2136,10 @@ static int do_create_record_stream(struct client *client, uint32_t command, uint
+ 	if (is_monitor)
+ 		pw_properties_set(props,
+ 				PW_KEY_STREAM_CAPTURE_SINK, "true");
+-	if (dont_inhibit_auto_suspend)
++	/* Peak meters observe existing capture; opening a desktop mixer must not
++	 * activate an idle microphone (and switch Bluetooth into HFP). Some
++	 * clients request peak detection without DONT_INHIBIT_AUTO_SUSPEND. */
++	if (dont_inhibit_auto_suspend || peak_detect)
+ 		pw_properties_set(props, PW_KEY_NODE_PASSIVE, "in-follow");
+ 
+ 	stream->stream = pw_stream_new(client->core, name, spa_steal_ptr(props));
+@@ -3634,8 +3609,6 @@ static int fill_card_info(struct client *client, struct message *m,
  		module_id = (uint32_t)atoi(str);
  
  	drv_name = spa_dict_lookup(info->props, PW_KEY_DEVICE_API);

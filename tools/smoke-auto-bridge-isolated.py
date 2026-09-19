@@ -17,6 +17,7 @@ p.add_argument('--pipewire', required=True, type=Path)
 p.add_argument('--wireplumber', required=True, type=Path)
 p.add_argument('--mock', required=True, type=Path)
 p.add_argument('--bridge', type=Path, help='Optional incremental bridge binary')
+p.add_argument('--peak-meter', type=Path, help='Compiled pulse-peak-meter.c fixture')
 p.add_argument('--vlc', type=Path, help='Existing VLC executable in /nix/store for corked startup regression')
 p.add_argument('--pulse-tools', type=Path, help='Existing PulseAudio bin directory for pulse-pause regression')
 p.add_argument('--output', required=True, type=Path)
@@ -38,6 +39,10 @@ if not a.inside:
         '--wireplumber', str(a.wireplumber.resolve()), '--mock', '/mock', '--bridge', '/bridge', '--cases', a.cases, '--output', '/report']
     if a.pulse_tools:
         command += ['--pulse-tools', str(a.pulse_tools.resolve())]
+    if a.peak_meter:
+        mount_index = command.index('--setenv')
+        command[mount_index:mount_index] = ['--ro-bind', str(a.peak_meter.resolve()), '/peak-meter']
+        command += ['--peak-meter', '/peak-meter']
     if a.vlc:
         command += ['--vlc', str(a.vlc.resolve())]
     sys.exit(subprocess.call(command))
@@ -183,6 +188,31 @@ try:
         '--playback-props=media.class=Audio/Source node.name=test_builtin_mic node.pause-on-idle=true priority.session=2009'])
     Path('/tmp/music.raw').write_bytes(b''.join(struct.pack('<hh', 8000 if i % 120 < 60 else -8000,
         8000 if i % 120 < 60 else -8000) for i in range(48000 * 40)))
+    if 'peak-meter' in a.cases.split(','):
+        assert a.peak_meter, '--peak-meter is required'
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        start('pulse-meter', [str(a.pipewire / 'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        mock, bridge = begin('cvsd', 'peak-meter')
+        source = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Source')
+        meter = start('peak-meter', [str(a.peak_meter), source])
+        time.sleep(2)
+        assert meter.poll() is None, report('peak-meter')
+        (a.output/'meter-graph.json').write_text(json.dumps(graph(),indent=2))
+        assert starts('mock-peak-meter','hfp') == 0, 'KDE-style peak meter activated HFP'
+        capture = record('peak-real-capture', source)
+        wait_for(lambda: current_profile() == 'hfp', 'genuine microphone capture did not activate HFP')
+        time.sleep(2)
+        stop(capture)
+        wait_for(lambda: current_profile() == 'a2dp', 'meter prevented return to A2DP after recording')
+        time.sleep(1)
+        assert starts('mock-peak-meter','hfp') == 1, 'meter restarted HFP after recording'
+        stop(meter)
+        assert meter.returncode == 0, report('peak-meter')
+        m = re.search(r'meter-samples=(\d+)',report('peak-meter'))
+        assert m and int(m[1]) > 5, 'passive meter did not follow genuine recording'
+        finish(mock,bridge)
+        checks.append({'case':'peak-meter','doesNotActivateHfp':True,'followsRealCapture':True,'returnsA2dpWithMeterOpen':True,'peakSamples':int(m[1])})
     if 'vlc' in a.cases.split(','):
         assert a.vlc, '--vlc is required'
         import wave
@@ -254,7 +284,7 @@ try:
         assert bridge.poll() is None, 'bridge crashed on player disconnect'
         finish(mock, bridge)
         checks.append({'case': 'pulse-pause', 'cycles': 8, 'stableNodeIds': True})
-    for kind in (item for item in a.cases.split(',') if item not in ('vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
+    for kind in (item for item in a.cases.split(',') if item not in ('peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()

@@ -56,3 +56,11 @@ Advertised AAC does not prove real AAC negotiation, encoding or decoding.
 Actual Floss codec tests are separate. These checks do not exercise radios,
 physical headset interoperability, hardware clocks, or controller SCO support.
 The independent microphone is synthetic, not the host ALSA device.
+
+`--cases peak-meter --peak-meter /path/to/compiled/pulse-peak-meter` tests
+KDE-style PulseAudio peak detection without DONT_INHIBIT_AUTO_SUSPEND. Compile
+`tools/pulse-peak-meter.c` against an existing libpulse development package.
+The meter must not activate HFP, must receive peaks during genuine capture,
+and must not prevent return to A2DP after the recording application closes.
+This tests the PulseAudio server; the older native PipeWire passive-meter test
+alone does not exercise the missing PulseAudio flag.

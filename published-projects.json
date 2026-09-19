@@ -11,7 +11,7 @@
     "branch": "floss",
     "upstream": "https://gitlab.freedesktop.org/pipewire/pipewire.git",
     "upstreamRev": "744a6b547ddb511e46fb41c1e54d033eca4faec9",
-    "commit": "b0664ae8ef3e4ea54e3681bc18a3279af9b54ca6"
+    "commit": "b7b8b5bd148e571d5df7a438857a80d092e2e973"
   },
   "wireplumber": {
     "repository": "gotlougit/floss-wireplumber",
