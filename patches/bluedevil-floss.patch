@@ -11,7 +11,7 @@ index ac2b7811..4b0cf37e 100644
      'frameworks/kauth': '@latest-kf6'
      'frameworks/kcodecs': '@latest-kf6'
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index ccb356e3..ed231518 100644
+index 07f7902e..962b28f1 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -20,33 +20,16 @@ find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS
@@ -63,7 +63,7 @@ index ccb356e3..ed231518 100644
  
  ki18n_install(po)
 diff --git a/README b/README
-index b819ed7f..2e6d7741 100644
+index b819ed7f..fcee19e1 100644
 --- a/README
 +++ b/README
 @@ -1,11 +1,13 @@
@@ -3872,10 +3872,10 @@ index 4e43398d..00000000
 -    }
 -}
 diff --git a/src/kcm/ui/main.qml b/src/kcm/ui/main.qml
-index 6ee6560d..dbaee39a 100644
+index 1e5661f0..de37ed22 100644
 --- a/src/kcm/ui/main.qml
 +++ b/src/kcm/ui/main.qml
-@@ -5,247 +5,123 @@
+@@ -5,248 +5,124 @@
   * SPDX-FileCopyrightText: 2022 Nate Graham <nate@kde.org>
   * SPDX-FileCopyrightText: 2023 Ismael Asensio <isma.af@gmail.com>
   * SPDX-FileCopyrightText: 2024 Shubham Arora <shubhamarora@protonmail.com>
@@ -4113,9 +4113,10 @@ index 6ee6560d..dbaee39a 100644
 -
                  KD.IconTitleSubtitle {
 -                    title: delegate.model.Name
++                    title: delegate.modelData.name
+                     textFormat: Text.PlainText
 -                    subtitle: root.infoText(delegate.model.Device)
 -                    icon.name: delegate.model.Icon
-+                    title: delegate.modelData.name
 +                    subtitle: delegate.modelData.pending ? i18n("Working…") : delegate.modelData.address
 +                    icon.name: delegate.modelData.icon
                      icon.width: Kirigami.Units.iconSizes.medium
@@ -12310,7 +12311,7 @@ index 00000000..75eb1f6e
 +}
 diff --git a/src/floss/README.md b/src/floss/README.md
 new file mode 100644
-index 00000000..b4107233
+index 00000000..e63782dd
 --- /dev/null
 +++ b/src/floss/README.md
 @@ -0,0 +1,134 @@

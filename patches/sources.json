@@ -1,16 +1,16 @@
 {
   "bluedevil": {
     "url": "https://invent.kde.org/plasma/bluedevil.git",
-    "rev": "c15cdd83448c7a62690f57c1dde723a5532f5eb8",
+    "rev": "daf77264c59f996a8db70780bbdfbf47a516b81f",
     "patch": "bluedevil-floss.patch",
-    "patchFileHash": "sha256-OukjsPVLsZn/sMplx2rNDphsA/tbrMUVvZeNse70Yrk=",
-    "patchBytes": 485615
+    "patchFileHash": "sha256-/NSWEHCciX/vjYKhd3HXwcx/zdfMGhmb7NtRVDZmOto=",
+    "patchBytes": 485663
   },
   "wireplumber": {
     "url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",
-    "rev": "2649ebb4dc37760ed220cb579f4b409c466804e8",
+    "rev": "20704c4d0d909e8b1604f333129a7c3b90dfb764",
     "patch": "wireplumber-floss.patch",
-    "patchFileHash": "sha256-AJinF4IH4tVC4gT4tAoP45W3u0FiYLllbh2iMZnxnKU=",
+    "patchFileHash": "sha256-vt+Kq0LgRxFpge+pW0GteweJIeHUZZvCGTv7gmoWv14=",
     "patchBytes": 130865
   },
   "bluetooth": {

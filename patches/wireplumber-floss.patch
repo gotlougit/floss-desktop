@@ -28,7 +28,7 @@ index b0dd9da..9b9a8bc 100644
  
  .. _pipewire-props(7): https://docs.pipewire.org/page_man_pipewire-props_7.html
 diff --git a/docs/rst/daemon/configuration/bluetooth.rst b/docs/rst/daemon/configuration/bluetooth.rst
-index 5acb223..7763c86 100644
+index 5acb223..8b8466c 100644
 --- a/docs/rst/daemon/configuration/bluetooth.rst
 +++ b/docs/rst/daemon/configuration/bluetooth.rst
 @@ -3,356 +3,7 @@
@@ -449,7 +449,7 @@ index f753e00..b9e9a2e 100644
                              See :ref:`config_video`.
  ``linking.conf``            Linking policy settings.
 diff --git a/docs/rst/daemon/configuration/features.rst b/docs/rst/daemon/configuration/features.rst
-index d06b07c..926b021 100644
+index d06b07c..182a845 100644
 --- a/docs/rst/daemon/configuration/features.rst
 +++ b/docs/rst/daemon/configuration/features.rst
 @@ -50,35 +50,12 @@ Audio
@@ -506,7 +506,7 @@ index 837e5af..0e240c7 100644
    'access.rst',
    'example_fragments.rst',
 diff --git a/docs/rst/daemon/configuration/migration.rst b/docs/rst/daemon/configuration/migration.rst
-index 8f7b7e9..316205d 100644
+index 8f7b7e9..a1f4ee9 100644
 --- a/docs/rst/daemon/configuration/migration.rst
 +++ b/docs/rst/daemon/configuration/migration.rst
 @@ -127,66 +127,19 @@ this:
@@ -757,7 +757,7 @@ index 2b1f26d..86cbe1c 100644
  A **setting**, on the other hand, is a runtime switch. The scripts subscribe to
  their settings and register or unregister their hooks on the fly, so state
 diff --git a/docs/rst/daemon/multi_instance.rst b/docs/rst/daemon/multi_instance.rst
-index c5d5193..f2efe9f 100644
+index c5d5193..b8db429 100644
 --- a/docs/rst/daemon/multi_instance.rst
 +++ b/docs/rst/daemon/multi_instance.rst
 @@ -23,8 +23,10 @@ select the profile to load:
@@ -3544,7 +3544,7 @@ index 45b7245..807e3b7 100644
      description = "Whether to restore device profile or not"
 diff --git a/docs/rst/daemon/configuration/floss.rst b/docs/rst/daemon/configuration/floss.rst
 new file mode 100644
-index 0000000..79a29fb
+index 0000000..40e1415
 --- /dev/null
 +++ b/docs/rst/daemon/configuration/floss.rst
 @@ -0,0 +1,99 @@

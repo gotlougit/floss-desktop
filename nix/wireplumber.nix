@@ -10,7 +10,7 @@
     owner = "pipewire";
     repo = "wireplumber";
     rev = sources.wireplumber.rev;
-    hash = "sha256-ZcTLtdLqJHc5lzldwI5SnxVAm4Ac0HOmgrHdXrtrc3c=";
+    hash = "sha256-jb+OrTVQ4d1hCX2TGWx5x+dvNS2kV4frBHLNk/0GnVo=";
   };
   patches = [ ../patches/wireplumber-floss.patch ];
   nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.python3 ];
