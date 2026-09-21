@@ -64,7 +64,15 @@ in (pkgs.rustPlatform.buildRustPackage.override { stdenv = pkgs.llvmPackages.std
       "$out/share/doc/floss/dbus-policy.upstream-example.conf"
   '';
   cargoBuildFlags = [ "-p" "btadapterd" "-p" "manager_service" "-p" "client" ];
-  doCheck = false;
+  # Exercise the exact sysfs discovery implementation without a live controller
+  # or the stack-wide test suite's hardware/service dependencies.
+  doCheck = true;
+  checkPhase = ''
+    runHook preCheck
+    rustc --edition=2021 --test system/gd/rust/linux/mgmt/src/hci_devpath.rs -o hci-devpath-tests
+    ./hci-devpath-tests
+    runHook postCheck
+  '';
   passthru = { inherit native codec; };
   meta = { description = "Android Floss Bluetooth daemon for Linux"; platforms = [ "x86_64-linux" ]; license = lib.licenses.asl20; };
 }

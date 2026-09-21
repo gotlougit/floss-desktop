@@ -25,8 +25,8 @@
         "files": [
           "system/gd/rust/linux/"
         ],
-        "patchBytes": 79321,
-        "patchFileHash": "sha256-AWoE2/nDgxm3pHMBvh43UyOJTMcl/P7wl7O8LYvQfgU="
+        "patchBytes": 84682,
+        "patchFileHash": "sha256-VE0d14oYXD3/Q6RBBQo5wXYVUv71GAEJRVOjHtpHI7o="
       },
       {
         "patch": "bluetooth-codec-service.patch",

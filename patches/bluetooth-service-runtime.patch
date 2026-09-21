@@ -1735,3 +1735,134 @@ index 0000000..a2d5e02
 +        assert!(!set(&fixture.0, 0, true, |_| panic!("unbounded directory write")));
 +    }
 +}
+diff --git a/system/gd/rust/linux/mgmt/src/config_util.rs b/system/gd/rust/linux/mgmt/src/config_util.rs
+--- a/system/gd/rust/linux/mgmt/src/config_util.rs
++++ b/system/gd/rust/linux/mgmt/src/config_util.rs
+@@ -168,8 +168,7 @@
+ /// Get the devpath for a given hci index. This gives a stable path that can be
+ /// used to identify a device even as the hci index fluctuates.
+ pub fn get_devpath_for_hci(hci: RealHciIndex) -> Option<String> {
+-    match std::fs::canonicalize(format!("{}/hci{}/device", HCI_DEVICES_DIR, hci.to_i32()).as_str())
+-    {
++    match crate::hci_devpath::resolve(Path::new("/sys"), hci.to_i32()) {
+         Ok(p) => Some(p.into_os_string().into_string().ok()?),
+         Err(e) => {
+             log::debug!("Failed to get devpath for {} with error: {}", hci, e);
+diff --git a/system/gd/rust/linux/mgmt/src/lib.rs b/system/gd/rust/linux/mgmt/src/lib.rs
+--- a/system/gd/rust/linux/mgmt/src/lib.rs
++++ b/system/gd/rust/linux/mgmt/src/lib.rs
+@@ -2,6 +2,7 @@
+ pub mod bluetooth_manager;
+ pub mod bluetooth_manager_dbus;
+ pub mod config_util;
++mod hci_devpath;
+ pub mod dbus_arg;
+ pub mod dbus_iface;
+ pub mod iface_bluetooth_experimental;
+diff --git a/system/gd/rust/linux/mgmt/src/hci_devpath.rs b/system/gd/rust/linux/mgmt/src/hci_devpath.rs
+new file mode 100644
+--- /dev/null
++++ b/system/gd/rust/linux/mgmt/src/hci_devpath.rs
+@@ -0,0 +1,102 @@
++//! Device identity for physical controllers and the userspace VHCI transport.
++use std::{
++    fs, io,
++    path::{Path, PathBuf},
++};
++
++pub(crate) fn resolve(sysfs: &Path, index: i32) -> io::Result<PathBuf> {
++    if index < 0 {
++        return Err(io::Error::new(io::ErrorKind::InvalidInput, "negative HCI index"));
++    }
++    let name = format!("hci{index}");
++    let controller = sysfs.join("class/bluetooth").join(&name);
++    match fs::canonicalize(controller.join("device")) {
++        Ok(device) => Ok(device),
++        Err(error) if error.kind() == io::ErrorKind::NotFound => {
++            // VHCI has no physical parent and therefore no `device` symlink.
++            // Only accept an existing controller in the kernel's virtual tree:
++            // a missing/broken physical parent must not invent a new identity.
++            let device = fs::canonicalize(&controller)?;
++            let expected = fs::canonicalize(sysfs)?.join("devices/virtual/bluetooth").join(name);
++            if device == expected && device.is_dir() {
++                // This identity is index-based. The USB transport deliberately
++                // requires one virtual controller at hci0 across restarts.
++                Ok(device)
++            } else {
++                Err(error)
++            }
++        }
++        Err(error) => Err(error),
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{
++        os::unix::fs::symlink,
++        sync::atomic::{AtomicUsize, Ordering},
++    };
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    struct Fixture(PathBuf);
++    impl Fixture {
++        fn new() -> Self {
++            let root = std::env::temp_dir().join(format!(
++                "floss-devpath-{}-{}",
++                std::process::id(),
++                NEXT.fetch_add(1, Ordering::Relaxed)
++            ));
++            fs::create_dir(&root).unwrap();
++            fs::create_dir_all(root.join("class/bluetooth")).unwrap();
++            Self(root)
++        }
++        fn controller(&self, index: i32, location: &str) -> PathBuf {
++            let path = self.0.join(location).join(format!("hci{index}"));
++            fs::create_dir_all(&path).unwrap();
++            symlink(&path, self.0.join(format!("class/bluetooth/hci{index}"))).unwrap();
++            path
++        }
++    }
++    impl Drop for Fixture {
++        fn drop(&mut self) {
++            fs::remove_dir_all(&self.0).unwrap();
++        }
++    }
++    #[test]
++    fn physical_identity_survives_index_changes() {
++        let f = Fixture::new();
++        let parent = f.0.join("devices/usb3/3-4/3-4:1.0");
++        fs::create_dir_all(&parent).unwrap();
++        for index in [0, 2] {
++            let hci = f.controller(index, "devices/usb3/3-4/3-4:1.0/bluetooth");
++            symlink(&parent, hci.join("device")).unwrap();
++            assert_eq!(resolve(&f.0, index).unwrap(), parent);
++        }
++    }
++    #[test]
++    fn virtual_controller_without_parent_is_discovered_and_removed() {
++        let f = Fixture::new();
++        let hci = f.controller(0, "devices/virtual/bluetooth");
++        assert!(!hci.join("device").exists());
++        assert_eq!(resolve(&f.0, 0).unwrap(), hci);
++        fs::remove_dir(&hci).unwrap();
++        assert!(resolve(&f.0, 0).is_err());
++    }
++    #[test]
++    fn broken_physical_parent_is_not_accepted() {
++        let f = Fixture::new();
++        let hci = f.controller(0, "devices/usb3/bluetooth");
++        assert!(resolve(&f.0, 0).is_err());
++        symlink(f.0.join("missing"), hci.join("device")).unwrap();
++        assert!(resolve(&f.0, 0).is_err());
++    }
++    #[test]
++    fn wrong_virtual_index_and_missing_indices_are_rejected() {
++        let f = Fixture::new();
++        let hci = f.controller(1, "devices/virtual/bluetooth");
++        symlink(hci, f.0.join("class/bluetooth/hci0")).unwrap();
++        assert!(resolve(&f.0, 0).is_err());
++        assert!(resolve(&f.0, 9).is_err());
++        assert!(resolve(&f.0, -1).is_err());
++    }
++}
