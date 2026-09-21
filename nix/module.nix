@@ -309,6 +309,8 @@ in {
       KERNEL=="rfkill", GROUP="floss", MODE="0660"
     '';
     services.pipewire.package = packages.pipewire;
+    services.pipewire.extraConfig.pipewire-pulse."90-floss-passive-meters" =
+      builtins.fromJSON (builtins.readFile ./passive-meters.json);
     services.pipewire.wireplumber.package = packages.wireplumber;
     environment.systemPackages = [ floss packages.pw-floss packages.bluedevil ];
     environment.sessionVariables.BLUEDEVIL_FLOSS_ADAPTER = toString cfg.floss.adapter;

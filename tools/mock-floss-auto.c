@@ -117,6 +117,16 @@ int main(int argc, char **argv) {
                     dbus_message_iter_close_container(&array, &dict);
                 }
                 dbus_message_iter_close_container(&root, &array);
+            } else if (!strcmp(method, "SetAudioConfig")) {
+                const char *addr; uint32_t codec; int32_t rate, bits, mode;
+                assert(dbus_message_get_args(m, NULL, DBUS_TYPE_STRING, &addr,
+                    DBUS_TYPE_UINT32, &codec, DBUS_TYPE_INT32, &rate,
+                    DBUS_TYPE_INT32, &bits, DBUS_TYPE_INT32, &mode, DBUS_TYPE_INVALID));
+                assert(!strcmp(addr, device) && token == 0 && bits == 1);
+                yes = release_ticks == 0 && codec <= (unsigned)aac && (rate == 1 || rate == 2) && mode == (a2dp_channels == 1 ? 1 : 2);
+                if (yes) a2dp_rate = rate == 1 ? 44100 : 48000;
+                printf("codec-request codec=%u accepted=%d\n",codec,yes);
+                dbus_message_append_args(reply, DBUS_TYPE_BOOLEAN, &yes, DBUS_TYPE_INVALID);
             } else if (!strcmp(method, "ReserveAudioSession")) {
                 const char *addr, *path; dbus_bool_t requested;
                 assert(dbus_message_get_args(m, NULL, DBUS_TYPE_STRING, &addr, DBUS_TYPE_BOOLEAN, &requested, DBUS_TYPE_OBJECT_PATH, &path, DBUS_TYPE_INVALID));
@@ -168,7 +178,7 @@ int main(int argc, char **argv) {
                     assert(!(peer.revents & (POLLHUP | POLLRDHUP)));
                 }
                 printf("stop profile=%s token=%llu received=%llu\n", hfp ? "hfp" : "a2dp", (unsigned long long)token, (unsigned long long)received);
-                token = 0; active = 0; release_ticks = !strcmp(kind, "delayed") ? 20 : 0; if (pcm >= 0) { close(pcm); pcm = -1; }
+                token = 0; active = 0; release_ticks = (!strcmp(kind, "delayed") || aac) ? 20 : 0; if (pcm >= 0) { close(pcm); pcm = -1; }
                 dbus_message_append_args(reply, DBUS_TYPE_BOOLEAN, &yes, DBUS_TYPE_INVALID);
             } else { fprintf(stderr, "unexpected method: %s\n", method); abort(); }
             dbus_connection_send(bus, reply, NULL); dbus_connection_flush(bus); dbus_message_unref(reply); dbus_message_unref(m);

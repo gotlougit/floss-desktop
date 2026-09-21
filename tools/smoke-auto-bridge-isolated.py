@@ -22,6 +22,7 @@ p.add_argument('--vlc', type=Path, help='Existing VLC executable in /nix/store f
 p.add_argument('--pulse-tools', type=Path, help='Existing PulseAudio bin directory for pulse-pause regression')
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--cases', default='sbc,aac,speaker,mono,cvsd,msbc,delayed,hfp-only,denied,lifecycle,defaults')
+p.add_argument('--pulse-config', type=Path, help='Extra pipewire-pulse configuration fragment')
 p.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
 a = p.parse_args()
 if not a.inside:
@@ -39,6 +40,10 @@ if not a.inside:
         '--wireplumber', str(a.wireplumber.resolve()), '--mock', '/mock', '--bridge', '/bridge', '--cases', a.cases, '--output', '/report']
     if a.pulse_tools:
         command += ['--pulse-tools', str(a.pulse_tools.resolve())]
+    if a.pulse_config:
+        mount_index = command.index('--setenv')
+        command[mount_index:mount_index] = ['--ro-bind', str(a.pulse_config.resolve()), '/pulse-extra.conf']
+        command += ['--pulse-config', '/pulse-extra.conf']
     if a.peak_meter:
         mount_index = command.index('--setenv')
         command[mount_index:mount_index] = ['--ro-bind', str(a.peak_meter.resolve()), '/peak-meter']
@@ -56,6 +61,14 @@ env.update(XDG_RUNTIME_DIR='/tmp/runtime', XDG_CONFIG_HOME='/tmp/config', XDG_ST
     PIPEWIRE_CONFIG_DIR=str(a.pipewire / 'share/pipewire'),
     WIREPLUMBER_CONFIG_DIR=str(a.wireplumber / 'share/wireplumber'),
     SPA_PLUGIN_DIR=str(a.pipewire / 'lib/spa-0.2'))
+if a.pulse_config:
+    shutil.copytree(a.pipewire / 'share/pipewire', '/tmp/pw-config')
+    Path('/tmp/pw-config').chmod(0o700)
+    extra = Path('/tmp/pw-config/pipewire-pulse.conf.d')
+    extra.mkdir(exist_ok=True)
+    extra.chmod(0o700)
+    shutil.copyfile(a.pulse_config, extra / '90-floss.conf')
+    env['PIPEWIRE_CONFIG_DIR'] = '/tmp/pw-config'
 Path('/tmp/bus.conf').write_text('''<busconfig><type>session</type><listen>unix:path=/tmp/private-bus</listen>
 <policy context="default"><allow own="*"/><allow send_destination="*"/><allow receive_sender="*"/></policy></busconfig>''')
 env['DBUS_SYSTEM_BUS_ADDRESS'] = env['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=/tmp/private-bus'
@@ -188,6 +201,72 @@ try:
         '--playback-props=media.class=Audio/Source node.name=test_builtin_mic node.pause-on-idle=true priority.session=2009'])
     Path('/tmp/music.raw').write_bytes(b''.join(struct.pack('<hh', 8000 if i % 120 < 60 else -8000,
         8000 if i % 120 < 60 else -8000) for i in range(48000 * 40)))
+    if 'profiles' in a.cases.split(','):
+        assert a.pulse_tools, '--pulse-tools is required'
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        pulse = start('pulse-profiles', [str(a.pipewire / 'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        def pactl(*args):
+            return subprocess.check_output([str(a.pulse_tools / 'pactl'), *args], env=env, text=True, timeout=5)
+        mock, bridge = begin('aac', 'profiles')
+        def cards():
+            return [c for c in json.loads(pactl('-f','json','list','cards'))
+                if c['name'].startswith('floss_card.')]
+        wait_for(lambda: len(cards()) == 1, 'Floss Pulse card missing')
+        card = cards()[0]
+        assert set(card['profiles']) == {'auto','a2dp-sink-sbc','a2dp-sink-aac','headset-head-unit'}, card
+        (a.output/'profiles-card.json').write_text(json.dumps(card,indent=2))
+        ids = node_ids()
+        sink = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Sink')
+        source = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Source')
+        wait_for(lambda: next(c for c in json.loads(pactl('-f','json','list','sinks')) if c['name'] == sink).get('properties',{}).get('device.id') == card['properties']['object.id'],
+            'sink is not associated with the profile card')
+        play = playback('profiles-play',sink)
+        # Keep an intentional noncentral balance and verify both channel values,
+        # not merely the average gain, survive a mono transport round trip.
+        pactl('set-sink-volume',sink,'40%','65%')
+        def sink_volume():
+            return next(c['volume'] for c in json.loads(pactl('-f','json','list','sinks')) if c['name'] == sink)
+        before = sink_volume()
+        def select(profile):
+            pactl('set-card-profile',card['name'],profile)
+            wait_for(lambda: cards()[0]['active_profile'] == profile, 'profile selection not published: '+profile)
+        select('headset-head-unit')
+        wait_for(lambda: current_profile() == 'hfp','manual HFP failed')
+        time.sleep(2.5)
+        assert current_profile() == 'hfp', 'manual HFP reverted without capture'
+        select('a2dp-sink-aac')
+        assert 'codec-request codec=1 accepted=1' in report('mock-profiles')
+        assert 'codec-request codec=1 accepted=0' in report('mock-profiles'), 'delayed codec release was not exercised'
+        capture = record('profiles-fixed-music-record',source)
+        time.sleep(2.5)
+        assert current_profile() == 'a2dp', 'fixed music profile switched for capture'
+        select('a2dp-sink-sbc')
+        assert 'codec-request codec=0 accepted=1' in report('mock-profiles')
+        select('auto')
+        wait_for(lambda: current_profile() == 'hfp','automatic profile ignored real recording')
+        stop(capture)
+        wait_for(lambda: current_profile() == 'a2dp','automatic profile failed to restore music')
+        assert node_ids() == ids, 'profile choice replaced endpoint nodes'
+        assert sink_volume() == before, ('stereo balance changed across profiles',before,sink_volume())
+        # Old deployments saved a MONO channel map after HFP. Restoring that
+        # state onto a stereo endpoint must duplicate the gain, not mute FR.
+        subprocess.run([str(a.pipewire / 'bin/pw-cli'),'set-param',str(ids[sink]),'Props',
+            '{ channelMap: [ MONO ] channelVolumes: [ 0.125 ] }'],env=env,check=True,timeout=5)
+        wait_for(lambda: set(sink_volume()) == {'front-left','front-right'}, 'legacy MONO layout was not repaired')
+        repaired = sink_volume()
+        assert repaired['front-left']['value'] == repaired['front-right']['value'], repaired
+        select('a2dp-sink-aac')
+        time.sleep(1.5)  # Allow WirePlumber's state save timer to run.
+        stop(play); stop(bridge)
+        wait_for(lambda: not nodes(),'nodes survived bridge stop')
+        bridge = start('bridge-profiles-restored',bridge_command)
+        wait_for(lambda: len(cards()) == 1 and cards()[0]['active_profile'] == 'a2dp-sink-aac',
+            'saved profile was not restored after bridge restart')
+        finish(mock,bridge)
+        stop(pulse)
+        checks.append({'case':'profiles','pulseCardControls':True,'codecRequests':True,
+            'manualHfpPersists':True,'fixedMusicSuppressesHfp':True,'automaticRestored':True,'stereoBalancePreserved':True,'legacyMonoRepaired':True,'savedProfileRestored':True})
     if 'peak-meter' in a.cases.split(','):
         assert a.peak_meter, '--peak-meter is required'
         env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
@@ -284,7 +363,7 @@ try:
         assert bridge.poll() is None, 'bridge crashed on player disconnect'
         finish(mock, bridge)
         checks.append({'case': 'pulse-pause', 'cycles': 8, 'stableNodeIds': True})
-    for kind in (item for item in a.cases.split(',') if item not in ('peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
+    for kind in (item for item in a.cases.split(',') if item not in ('profiles', 'peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()
@@ -294,6 +373,8 @@ try:
             assert node.get('node.description') == 'Scripted headset', 'device name missing'
         sink = next(n['node.name'] for n in props if n['media.class'] == 'Audio/Sink')
         ids = node_ids()
+        subprocess.run([str(a.wireplumber / 'bin/wpctl'), 'set-volume', str(ids[sink]), '100%'],
+            env=env, check=True, timeout=5)
         play = playback(kind + '-play', sink)
         time.sleep(1)
         assert bridge.poll() is None and current_profile() == 'a2dp'

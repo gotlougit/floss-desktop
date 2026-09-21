@@ -26,6 +26,9 @@
 #include <spa/param/audio/format-utils.h>
 #include <spa/param/latency-utils.h>
 #include <pipewire/pipewire.h>
+#include <spa/monitor/device.h>
+#include <spa/param/profile.h>
+#include <spa/pod/filter.h>
 
 #define SERVICE "org.chromium.bluetooth"
 #define MEDIA_IFACE SERVICE ".BluetoothMedia"
@@ -59,6 +62,23 @@ struct clock_controller {
 };
 
 struct bridge {
+    struct pw_context *context;
+    struct pw_core *core;
+    uint32_t card_id;
+    struct spa_hook playback_listener, capture_listener;
+    struct pw_registry *registry;
+    struct spa_hook registry_listener;
+    struct spa_list graph_objects;
+    bool capture_demand;
+    struct spa_device card;
+    struct spa_hook_list card_listeners;
+    struct spa_param_info card_params[2];
+    struct pw_properties *card_properties;
+    struct pw_proxy *card_proxy;
+    struct spa_hook card_proxy_listener;
+    int requested_profile, selected_profile;
+    bool profile_save, repair_layout;
+    int32_t codec_rates[2], codec_modes[2];
 	struct pw_main_loop *main;
 	struct pw_stream *stream;
 	struct pw_stream *capture;
@@ -104,6 +124,9 @@ struct bridge {
     uint64_t playback_latency_update_ns, capture_latency_update_ns;
     uint64_t position_progress_ns, position_request_ns;
 };
+
+#include "profiles.h"
+#include "capture-demand.h"
 
 struct hfp_pcm_config {
 	dbus_bool_t ready;
@@ -246,7 +269,7 @@ static void bus_tick(void *data, uint64_t expirations)
     struct bridge *b = data;
     (void)expirations;
     dispatch_bus(b);
-    if (b->automatic && !b->failed) automatic_tick(b);
+    if (b->automatic && !b->starting && !b->failed) automatic_tick(b);
     if (!b->hfp && !b->failed && ++b->position_ticks >= 5) {
         b->position_ticks = 0;
         poll_position(b);
@@ -930,9 +953,29 @@ static void process(void *data)
     offset = d->chunk->offset % d->maxsize;
     size = SPA_MIN(d->chunk->size, d->maxsize);
     if (size && !silent && !d->data) { fail(b, "PCM payload is not mapped"); goto done; }
-    if (size % (b->channels * 2)) {
+    if (size % 4) {
         fail(b, "PCM chunk ends in a partial audio frame");
         goto done;
+    }
+    uint8_t mono[QUEUE_SIZE];
+    struct spa_chunk mono_chunk;
+    struct spa_data mono_data;
+    if (b->channels == 1) {
+        if (size / 2 > sizeof(mono)) goto done;
+        for (size_t i = 0; i < size / 4; i++) {
+            int16_t pcm[2] = { 0, 0 };
+            if (!silent) {
+                for (size_t j = 0; j < 4; j++)
+                    ((uint8_t *)pcm)[j] = ((uint8_t *)d->data)[(offset + 4*i + j) % d->maxsize];
+            }
+            int16_t sample = ((int32_t)pcm[0] + pcm[1]) / 2;
+            memcpy(mono + 2*i, &sample, 2);
+        }
+        size /= 2;
+        mono_chunk = (struct spa_chunk){ .size = size, .stride = 2 };
+        mono_data = (struct spa_data){ .data = mono, .maxsize = sizeof(mono), .chunk = &mono_chunk };
+        d = &mono_data;
+        offset = 0;
     }
     level = playback_level(b, now);
     adapt_rate(b, b->stream, &b->playback_clock,
@@ -1039,7 +1082,7 @@ static void capture_state_changed(void *data, enum pw_stream_state old,
 	struct bridge *b = data;
 	(void)old;
 	b->capture_running = state == PW_STREAM_STATE_STREAMING;
-    if (!b->capture_running) b->capture_idle_ms = monotonic_ms();
+
     if (!b->capture_running) {
         discard_idle_capture(b);
         b->capture_primed = false;
@@ -1056,8 +1099,9 @@ static void playback_param_changed(void *data, uint32_t id, const struct spa_pod
     struct bridge *b = data;
     struct spa_audio_info_raw info = { 0 };
     if (id != SPA_PARAM_Format) return;
+    b->repair_layout = param != NULL;
     b->playback_format_ready = param && spa_format_audio_raw_parse(param, &info) >= 0 &&
-        info.format == SPA_AUDIO_FORMAT_S16_LE && info.rate == b->rate && info.channels == b->channels;
+        info.format == SPA_AUDIO_FORMAT_S16_LE && info.rate == b->rate && info.channels == 2;
 }
 
 static void capture_param_changed(void *data, uint32_t id, const struct spa_pod *param)
@@ -1076,9 +1120,17 @@ static const struct pw_stream_events capture_events = {
     .param_changed = capture_param_changed,
 };
 
+static void playback_control_info(void *data, uint32_t id, const struct pw_stream_control *control)
+{
+    struct bridge *b = data;
+    if (id == SPA_PROP_channelVolumes && control->n_values == 1)
+        b->repair_layout = true;
+}
+
 static const struct pw_stream_events events = {
 	PW_VERSION_STREAM_EVENTS,
 	.state_changed = state_changed,
+    .control_info = playback_control_info,
 	.process = process,
     .param_changed = playback_param_changed,
 };
@@ -1089,7 +1141,7 @@ static bool connect_stream(struct bridge *b, unsigned adapter, bool capture)
 	struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod_buffer, sizeof(pod_buffer));
 	struct spa_audio_info_raw format = SPA_AUDIO_INFO_RAW_INIT(
 		.format = SPA_AUDIO_FORMAT_S16_LE, .rate = capture ? b->capture_rate : b->rate,
-        .channels = capture ? 1 : b->channels);
+        .channels = capture ? 1 : 2);
 	const struct spa_pod *params[1];
 	struct pw_properties *props;
 	struct pw_stream **stream = capture ? &b->capture : &b->stream;
@@ -1101,7 +1153,8 @@ static bool connect_stream(struct bridge *b, unsigned adapter, bool capture)
 		PW_KEY_NODE_DESCRIPTION, description, "device.api", "floss",
 		"device.description", description, "device.bus", "bluetooth",
 		"device.icon-name", capture ? "audio-input-microphone-bluetooth" : "audio-headphones-bluetooth",
-		"api.floss.profile", b->automatic ? "auto" : b->hfp ? "hfp" : "a2dp",
+		"card.profile.device", capture ? "1" : "0",
+        "api.floss.profile", b->automatic ? "auto" : b->hfp ? "hfp" : "a2dp",
         "api.floss.active-profile", b->hfp ? "hfp" : "a2dp",
         "priority.session", capture ? "3010" : "2010",
 		/* These streams represent physical Bluetooth endpoints. Marking them
@@ -1124,11 +1177,13 @@ static bool connect_stream(struct bridge *b, unsigned adapter, bool capture)
     /* Request 10 ms graph periods so a normal quantum fits comfortably in the
      * bounded 100 ms jitter rings. Forced oversized quanta fail explicitly. */
     pw_properties_setf(props, PW_KEY_NODE_LATENCY, "%u/%u", b->rate / 100, b->rate);
-	*stream = pw_stream_new_simple(pw_main_loop_get_loop(b->main), description,
-		props, capture ? &capture_events : &events, b);
+    if (b->automatic) pw_properties_setf(props,"device.id","%u",b->card_id);
+    *stream = pw_stream_new(b->core, description, props);
 	if (!*stream)
 		return false;
-	if (capture || b->channels == 1) {
+    pw_stream_add_listener(*stream, capture ? &b->capture_listener : &b->playback_listener,
+        capture ? &capture_events : &events, b);
+	if (capture) {
 		format.position[0] = SPA_AUDIO_CHANNEL_MONO;
 	} else {
 		format.position[0] = SPA_AUDIO_CHANNEL_FL;
@@ -1171,6 +1226,7 @@ static bool discover_device(struct bridge *b)
         DBusMessageIter entries;
         const char *address = NULL, *name = NULL;
         dbus_int32_t hfp = 0;
+        int32_t codec_rates[2] = {0}, codec_modes[2] = {0};
         bool a2dp = false;
         dbus_message_iter_recurse(&devices, &entries);
         while (dbus_message_iter_get_arg_type(&entries) == DBUS_TYPE_DICT_ENTRY) {
@@ -1191,11 +1247,35 @@ static bool discover_device(struct bridge *b)
                 DBusMessageIter caps;
                 dbus_message_iter_recurse(&value, &caps);
                 a2dp = dbus_message_iter_get_arg_type(&caps) != DBUS_TYPE_INVALID;
+                while (dbus_message_iter_get_arg_type(&caps) == DBUS_TYPE_ARRAY) {
+                    DBusMessageIter fields;
+                    int32_t codec = -1, rates = 0, modes = 0;
+                    dbus_message_iter_recurse(&caps,&fields);
+                    while (dbus_message_iter_get_arg_type(&fields) == DBUS_TYPE_DICT_ENTRY) {
+                        DBusMessageIter item, val; const char *field;
+                        dbus_message_iter_recurse(&fields,&item);
+                        dbus_message_iter_get_basic(&item,&field);
+                        dbus_message_iter_next(&item); dbus_message_iter_recurse(&item,&val);
+                        if (dbus_message_iter_get_arg_type(&val) == DBUS_TYPE_INT32) {
+                            if (!strcmp(field,"codec_type")) dbus_message_iter_get_basic(&val,&codec);
+                            if (!strcmp(field,"sample_rate")) dbus_message_iter_get_basic(&val,&rates);
+                            if (!strcmp(field,"channel_mode")) dbus_message_iter_get_basic(&val,&modes);
+                        }
+                        dbus_message_iter_next(&fields);
+                    }
+                    if (codec >= 0 && codec < 2) {
+                        codec_rates[codec] = rates & 1 ? 1 : rates & 2 ? 2 : 0;
+                        codec_modes[codec] = modes & 2 ? 2 : modes & 1 ? 1 : 0;
+                    }
+                    dbus_message_iter_next(&caps);
+                }
             }
             dbus_message_iter_next(&entries);
         }
         if (address && valid_address(address) && (a2dp || hfp) &&
                 (!b->address[0] || !strcasecmp(address, b->address))) {
+            memcpy(b->codec_rates,codec_rates,sizeof(codec_rates));
+            memcpy(b->codec_modes,codec_modes,sizeof(codec_modes));
             bool microphone = hfp != 0;
             if (b->address[0] && microphone != b->microphone) {
                 fail(b, "headset capabilities changed; refreshing nodes");
@@ -1261,11 +1341,55 @@ static bool update_format(struct pw_stream *stream, uint32_t rate, uint32_t chan
     return pw_stream_update_params(stream, &param, 1) >= 0;
 }
 
+static void repair_stereo_layout(struct bridge *b)
+{
+    if (!b->repair_layout || !b->stream) return;
+    const struct pw_stream_control *vol = pw_stream_get_control(b->stream,SPA_PROP_channelVolumes);
+    if (!vol || !vol->n_values) return;
+    b->repair_layout = false;
+    if (vol->n_values != 1) return;
+    float values[2] = { vol->values[0], vol->values[0] };
+    uint32_t map[2] = { SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR };
+    uint8_t data[256]; struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(data,sizeof(data));
+    const struct spa_pod *param = spa_pod_builder_add_object(&builder,SPA_TYPE_OBJECT_Props,SPA_PARAM_Props,
+        SPA_PROP_channelMap,SPA_POD_Array(sizeof(uint32_t),SPA_TYPE_Id,2,map),
+        SPA_PROP_channelVolumes,SPA_POD_Array(sizeof(float),SPA_TYPE_Float,2,values));
+    pw_stream_set_param(b->stream,SPA_PARAM_Props,param);
+}
+static bool request_codec(struct bridge *b, int profile)
+{
+    if (profile != 1 && profile != 2) return true;
+    const char *address = b->address;
+    dbus_uint32_t codec = profile - 1;
+    dbus_int32_t rate = b->codec_rates[codec], bits = 1, mode = b->codec_modes[codec];
+    if (!rate || !mode) return false;
+    int64_t deadline = monotonic_ms() + CALL_TIMEOUT_MS;
+    do {
+        bool accepted = false;
+        if (!bool_reply(call(b,"SetAudioConfig",DBUS_TYPE_STRING,&address,
+                DBUS_TYPE_UINT32,&codec,DBUS_TYPE_INT32,&rate,DBUS_TYPE_INT32,&bits,
+                DBUS_TYPE_INT32,&mode,DBUS_TYPE_INVALID),&accepted)) return false;
+        if (accepted) return true;
+        /* Stop acknowledges cancellation before the terminal native callback.
+         * Codec configuration is excluded while that lease is still stopping,
+         * just like ReserveAudioSession. Keep nodes while waiting, and bound
+         * retries so a genuine codec refusal can restore the old profile. */
+        dispatch_bus(b);
+        if (b->failed || startup_cancelled) return false;
+        poll(NULL, 0, 50);
+    } while (monotonic_ms() < deadline);
+    return false;
+}
 static void automatic_tick(struct bridge *b)
 {
+    repair_stereo_layout(b);
     int64_t now = monotonic_ms();
-    bool wanted_hfp = !b->a2dp_available || (b->capture_running && now >= b->hfp_retry_deadline) ||
+    bool demand = capture_requested(b);
+    if (b->capture_demand && !demand) b->capture_idle_ms = now;
+    b->capture_demand = demand;
+    bool wanted_hfp = !b->a2dp_available || (demand && now >= b->hfp_retry_deadline) ||
         (b->hfp && now - b->capture_idle_ms < 2000);
+    if (b->requested_profile) wanted_hfp = b->requested_profile == 3;
     if (b->transitioning) return;
     if (now >= b->discovery_deadline) {
         b->discovery_deadline = now + 1000;
@@ -1281,8 +1405,9 @@ static void automatic_tick(struct bridge *b)
             }
         }
     }
-    if (wanted_hfp == b->hfp) return;
-    uint32_t old_rate = b->rate, old_channels = b->channels, old_capture_rate = b->capture_rate;
+    bool profile_request = b->requested_profile != b->selected_profile;
+    if (wanted_hfp == b->hfp && !profile_request) return;
+    uint32_t old_rate = b->rate, old_capture_rate = b->capture_rate;
     b->transitioning = true;
     /* audioadapter marks EnumFormat changes for renegotiation on restart.
      * Suspend processing, retaining the published nodes and their links. */
@@ -1291,6 +1416,13 @@ static void automatic_tick(struct bridge *b)
     /* Processing is on this same non-RT loop. No PCM callback can race the
      * bounded stop/start RPCs or consume data with the previous format. */
     stop_transport(b);
+    int target_profile = b->requested_profile;
+    if (profile_request && !request_codec(b,target_profile)) {
+        fprintf(stderr,"pw-floss: codec selection refused; restoring previous profile\n");
+        target_profile = b->selected_profile;
+        b->requested_profile = target_profile;
+        wanted_hfp = b->hfp;
+    }
     b->hfp = wanted_hfp;
     if (!(b->hfp ? start_hfp(b) : start_audio(b))) {
         /* A rejected SCO request must not remove an application's selected
@@ -1301,6 +1433,7 @@ static void automatic_tick(struct bridge *b)
         b->failed = false;
         b->hfp = false;
         b->hfp_retry_deadline = monotonic_ms() + 10000;
+        target_profile = b->requested_profile = 0;
         if (!fallback || !start_audio(b)) {
             b->transitioning = false;
             fail(b, "profile transition failed; waiting before retry");
@@ -1309,11 +1442,11 @@ static void automatic_tick(struct bridge *b)
     }
     b->capture_rate = b->hfp ? b->rate : 16000;
     b->queue_limit = b->rate * b->channels * 2 / 10;
-    bool playback_changed = old_rate != b->rate || old_channels != b->channels;
+    bool playback_changed = old_rate != b->rate;
     bool capture_changed = old_capture_rate != b->capture_rate;
     if (playback_changed) b->playback_format_ready = false;
     if (capture_changed) b->capture_format_ready = false;
-    if ((playback_changed && !update_format(b->stream, b->rate, b->channels)) ||
+    if ((playback_changed && !update_format(b->stream, b->rate, 2)) ||
             (b->capture && capture_changed && !update_format(b->capture, b->capture_rate, 1))) {
         b->transitioning = false;
         fail(b, "could not renegotiate PipeWire profile format");
@@ -1331,6 +1464,8 @@ static void automatic_tick(struct bridge *b)
     struct spa_dict properties = SPA_DICT_INIT(&active, 1);
     pw_stream_update_properties(b->stream, &properties);
     if (b->capture) pw_stream_update_properties(b->capture, &properties);
+    b->selected_profile = target_profile;
+    profile_changed(b);
     b->transitioning = false;
     if (b->failed) pw_main_loop_quit(b->main);
     fprintf(stderr, "pw-floss: automatic %s: %u Hz, %u channel(s)\n",
@@ -1427,8 +1562,19 @@ static int run_bridge(int argc, char **argv)
 	if (!b.audio_source || !b.bus_timer ||
 	    pw_loop_update_timer(loop, b.bus_timer, &interval, &interval, false) < 0)
 		goto done;
+    b.context = pw_context_new(loop, NULL, 0);
+    if (!b.context || !(b.core = pw_context_connect(b.context, NULL, 0))) goto done;
+    b.card_id = SPA_ID_INVALID;
+    if (b.automatic) {
+        if (!setup_profiles(&b)) goto done;
+        int64_t deadline = monotonic_ms() + 3000;
+        while (b.card_id == SPA_ID_INVALID && !startup_cancelled && monotonic_ms() < deadline)
+            if (pw_loop_iterate(loop, 20) < 0) break;
+        if (b.card_id == SPA_ID_INVALID) goto done;
+    }
 	if (!connect_stream(&b, adapter, false) || ((b.hfp || (b.automatic && b.microphone)) && !connect_stream(&b, adapter, true)))
 		goto done;
+    if (b.automatic && !setup_capture_watch(&b)) goto done;
     /* Prime transport buffering. HFP graph queues separately prefill to the
      * recovery target while silence keeps the SCO transport clock running. */
     queue_output(&b, NULL, b.hfp ? b.rate * b.channels * 2 / 100 :
@@ -1445,10 +1591,15 @@ bad_args:
 done:
 	/* All blocking calls occur before streaming or after destroying the node. */
 	b.starting = true;
+    destroy_capture_watch(&b);
+    if (b.card_proxy) pw_proxy_destroy(b.card_proxy);
+    if (b.card_properties) pw_properties_free(b.card_properties);
 	if (b.capture)
 		pw_stream_destroy(b.capture);
 	if (b.stream)
 		pw_stream_destroy(b.stream);
+    if (b.core) pw_core_disconnect(b.core);
+    if (b.context) pw_context_destroy(b.context);
 	if (b.main) {
 		if (b.audio_source)
 			pw_loop_destroy_source(pw_main_loop_get_loop(b.main), b.audio_source);

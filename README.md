@@ -25,6 +25,12 @@ profiles, codecs and transport, while PipeWire handles desktop audio mixing and
 resampling. The NixOS module supplies the service accounts, permissions, D-Bus
 policy, systemd units and package substitutions that connect these pieces.
 
+The bridge exposes a standard audio card with Automatic, SBC, AAC and
+Hands-free choices in KDE sound settings, limited to the connected device's
+capabilities. Automatic mode switches for real microphone use; passive panel
+meters leave the transport alone. See [the bridge protocol](pw-floss/PROTOCOL.md)
+for profile behavior and validation limits.
+
 ## LLM usage disclosure
 
 Almost the entire codebase is LLM owned. As the foundations are solid enough,

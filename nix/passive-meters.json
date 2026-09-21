@@ -1,0 +1,8 @@
+{
+  "stream.rules": [
+    {
+      "matches": [ { "stream.monitor": true } ],
+      "actions": { "update-props": { "node.passive": true } }
+    }
+  ]
+}

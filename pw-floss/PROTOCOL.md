@@ -12,7 +12,9 @@ determined by the Floss build and headset negotiation, not PipeWire capabilities
 ## Automatic profile selection
 
 The first ready device is selected and remains selected until it disappears.
-Starting a recording routed to that headset's microphone activates HFP. Recording
+Starting an active recording routed to that headset's microphone activates HFP.
+The bridge watches links and consumers rather than source scheduling alone:
+monitor streams and passive level meters do not request HFP. Recording
 from another source does not activate the headset. After two seconds with no
 headset capture demand, the bridge restores A2DP. Playback-only speakers expose
 no microphone. Voice-only devices stay in HFP. Nodes retain their identities
@@ -20,7 +22,13 @@ across profile changes, so applications can keep their selected source/sink.
 Session priorities prefer a connected headset over ordinary built-in devices;
 WirePlumber still honors an explicitly saved user default.
 
-PipeWire renegotiates each retained node's format when profiles change. The
+The playback endpoint always exposes FL/FR stereo, including while the transport
+is mono. The bridge averages the two PCM channels for HFP or a mono A2DP peer.
+This prevents WirePlumber from restoring a mono channel map onto stereo playback;
+legacy single-channel volume state is repaired by copying its gain to both sides.
+Intentional stereo balance is preserved.
+
+PipeWire renegotiates each retained node's sample rate when profiles change. The
 bridge waits for the corresponding format callback before consuming PCM; the
 dormant microphone supplies silence while A2DP is active or SCO starts. HFP
 startup failure restores A2DP without deleting nodes, then retries after ten
@@ -31,6 +39,28 @@ The bridge does not pair or connect Bluetooth devices; BlueDevil handles that.
 The global `org.pipewire.FlossAudio` bus name prevents competing bridges from
 using Floss's singleton PCM sockets. It does not implement active-seat ownership.
 One connected device is used at a time.
+
+## Desktop profile controls
+
+A standard PipeWire Device publishes profiles to PulseAudio and KDE's existing
+sound settings. No plasma-pa fork is needed:
+
+- **Automatic music / headset** follows real microphone demand.
+- **High Fidelity Playback (SBC/AAC)** requests that codec through Floss and
+  keeps music mode even if an application opens the microphone. The persistent
+  microphone endpoint supplies silence in this mode.
+- **Handsfree Headset** keeps HFP active, including with no recording application.
+  Floss negotiates CVSD or mSBC; there are no separate forced HFP codec choices.
+
+The NixOS module also makes PulseAudio monitor streams passive. Opening KDE's
+audio panel therefore does not wake idle ALSA devices and change the graph clock.
+Meters follow an already running stream; an idle microphone can show no level.
+
+Only supported SBC/AAC/HFP choices are advertised. WirePlumber saves explicit
+profile choices using its normal device-profile state. Codec selection is a
+Floss negotiation request, not proof of the over-the-air codec: inspect the
+Floss negotiation logs when verifying a real headset. Transport failures still
+use the normal reconnect path.
 
 ## Authoritative format and lease contracts
 
