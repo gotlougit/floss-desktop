@@ -26,15 +26,15 @@ static void field(DBusMessageIter *dict, const char *key, int type, const void *
     assert(dbus_message_iter_close_container(&item, &variant));
     assert(dbus_message_iter_close_container(dict, &item));
 }
-static void capabilities(DBusMessageIter *dict, int aac, int mono) {
+static void capabilities(DBusMessageIter *dict, int max_codec, int mono) {
     DBusMessageIter item, variant, array;
     const char *key = "a2dp_caps";
     dbus_message_iter_open_container(dict, DBUS_TYPE_DICT_ENTRY, NULL, &item);
     dbus_message_iter_append_basic(&item, DBUS_TYPE_STRING, &key);
     dbus_message_iter_open_container(&item, DBUS_TYPE_VARIANT, "aa{sv}", &variant);
     dbus_message_iter_open_container(&variant, DBUS_TYPE_ARRAY, "a{sv}", &array);
-    for (int codec = 0; codec <= aac; codec++) {
-        DBusMessageIter entry; int32_t priority = 0, rate = 3, bits = 1, channels = mono ? 1 : 2; int64_t zero = 0;
+    for (int codec = 0; codec <= max_codec; codec++) {
+        DBusMessageIter entry; int32_t priority = 0, rate = codec == 4 ? 15 : 3, bits = codec == 4 ? 7 : codec == 3 ? 2 : 1, channels = mono ? 1 : 2; int64_t zero = 0;
         dbus_message_iter_open_container(&array, DBUS_TYPE_ARRAY, "{sv}", &entry);
         field(&entry, "codec_type", DBUS_TYPE_INT32, &codec);
         field(&entry, "codec_priority", DBUS_TYPE_INT32, &priority);
@@ -68,6 +68,9 @@ int main(int argc, char **argv) {
     uint32_t hfp_rate = !strcmp(kind, "cvsd") ? 8000 : 16000;
     uint32_t a2dp_rate = aac ? 44100 : 48000;
     unsigned char a2dp_channels = !strcmp(kind, "mono") ? 1 : 2;
+    int max_codec = !strncmp(kind,"ldac",4) ? 4 : !strcmp(kind,"aptx-hd") ? 3 : !strcmp(kind,"aptx") ? 2 : aac;
+    unsigned char a2dp_bits = !strcmp(kind,"ldac32") ? 32 : (!strcmp(kind,"aptx-hd") || !strcmp(kind,"ldac24")) ? 24 : 16;
+    if (max_codec == 4) a2dp_rate = 96000;
     int stall_ticks = 0;
     int present = 1, pcm = -1, hfp = 0, active = 0, release_ticks = 0;
     uint64_t token = 0, next_token = 100, received = 0, total[2] = {0}, nonzero[2] = {0};
@@ -78,6 +81,7 @@ int main(int argc, char **argv) {
     int sockets[] = {listener(paths[0]), listener(paths[1])};
     signal(SIGTERM, quit); signal(SIGINT, quit); signal(SIGPIPE, SIG_IGN);
     FILE *mono_samples = !strcmp(kind, "mono") ? fopen("/tmp/mock-mono.raw", "wb") : NULL;
+    FILE *hifi_samples = max_codec >= 2 ? fopen("/tmp/mock-hifi.raw", "wb") : NULL;
     setbuf(stdout, NULL); printf("ready kind=%s advertised_aac=%d hfp_rate=%u\n", kind, aac, hfp_rate);
     struct timespec deadline; clock_gettime(CLOCK_MONOTONIC, &deadline);
     while (running) {
@@ -113,7 +117,7 @@ int main(int argc, char **argv) {
                     const char *listed_device = present == 2 && index == 0 ? "11:22:33:44:55:66" : device;
                     dbus_message_iter_open_container(&array, DBUS_TYPE_ARRAY, "{sv}", &dict);
                     field(&dict, "address", DBUS_TYPE_STRING, &listed_device); field(&dict, "name", DBUS_TYPE_STRING, &name);
-                    capabilities(&dict, !strcmp(kind, "hfp-only") ? -1 : aac, a2dp_channels == 1); field(&dict, "hfp_cap", DBUS_TYPE_INT32, &cap); field(&dict, "absolute_volume", DBUS_TYPE_BOOLEAN, &yes);
+                    capabilities(&dict, !strcmp(kind, "hfp-only") ? -1 : max_codec, a2dp_channels == 1); field(&dict, "hfp_cap", DBUS_TYPE_INT32, &cap); field(&dict, "absolute_volume", DBUS_TYPE_BOOLEAN, &yes);
                     dbus_message_iter_close_container(&array, &dict);
                 }
                 dbus_message_iter_close_container(&root, &array);
@@ -122,9 +126,9 @@ int main(int argc, char **argv) {
                 assert(dbus_message_get_args(m, NULL, DBUS_TYPE_STRING, &addr,
                     DBUS_TYPE_UINT32, &codec, DBUS_TYPE_INT32, &rate,
                     DBUS_TYPE_INT32, &bits, DBUS_TYPE_INT32, &mode, DBUS_TYPE_INVALID));
-                assert(!strcmp(addr, device) && token == 0 && bits == 1);
-                yes = release_ticks == 0 && codec <= (unsigned)aac && (rate == 1 || rate == 2) && mode == (a2dp_channels == 1 ? 1 : 2);
-                if (yes) a2dp_rate = rate == 1 ? 44100 : 48000;
+                assert(!strcmp(addr, device) && token == 0);
+                yes = release_ticks == 0 && codec <= (unsigned)max_codec && (rate == 1 || rate == 2 || (codec == 4 && (rate == 4 || rate == 8))) && (bits == 1 || (codec >= 3 && bits == 2) || (codec == 4 && bits == 4)) && mode == (a2dp_channels == 1 ? 1 : 2);
+                if (yes) { a2dp_rate = rate == 1 ? 44100 : rate == 2 ? 48000 : rate == 4 ? 88200 : 96000; a2dp_bits = bits == 1 ? 16 : bits == 2 ? 24 : 32; }
                 printf("codec-request codec=%u accepted=%d\n",codec,yes);
                 dbus_message_append_args(reply, DBUS_TYPE_BOOLEAN, &yes, DBUS_TYPE_INVALID);
             } else if (!strcmp(method, "ReserveAudioSession")) {
@@ -153,7 +157,7 @@ int main(int argc, char **argv) {
                     assert(!strcmp(dbus_message_get_sender(m), owner));
                 }
                 DBusMessageIter root, dict; uint32_t rate = hfp ? hfp_rate : a2dp_rate, codec = hfp_rate == 8000 ? 1 : 2;
-                unsigned char bits = 16, channels = hfp ? 1 : a2dp_channels; uint64_t generation = token; const char *path = paths[hfp];
+                unsigned char bits = hfp ? 16 : a2dp_bits, channels = hfp ? 1 : a2dp_channels; uint64_t generation = token; const char *path = paths[hfp];
                 dbus_bool_t ready = token != 0;
                 dbus_message_iter_init_append(reply, &root); dbus_message_iter_open_container(&root, DBUS_TYPE_ARRAY, "{sv}", &dict);
                 field(&dict, "ready", DBUS_TYPE_BOOLEAN, &ready); field(&dict, "active", DBUS_TYPE_BOOLEAN, &ready);
@@ -185,10 +189,10 @@ int main(int argc, char **argv) {
         }
         if (pcm < 0 && active) pcm = accept4(sockets[hfp], NULL, NULL, SOCK_NONBLOCK);
         if (pcm >= 0 && stall_ticks == 0) {
-            unsigned char data[8192]; ssize_t n; size_t period = hfp ? hfp_rate / 100 * 2 : a2dp_rate / 100 * a2dp_channels * 2;
+            unsigned char data[8192]; ssize_t n; size_t period = hfp ? hfp_rate / 100 * 2 : a2dp_rate / 100 * a2dp_channels * (a2dp_bits/8);
             n = recv(pcm, data, period, MSG_DONTWAIT);
-            if (n > 0) { if (mono_samples && !hfp) fwrite(data, 1, n, mono_samples); received += n; total[hfp] += n; for (ssize_t i = 0; i < n; i++) if (data[i]) nonzero[hfp]++; }
-            if (hfp) {
+            if (n > 0) { if (mono_samples && !hfp) fwrite(data, 1, n, mono_samples); if (hifi_samples && !hfp) fwrite(data, 1, n, hifi_samples); received += n; total[hfp] += n; for (ssize_t i = 0; i < n; i++) if (data[i]) nonzero[hfp]++; }
+            if (hfp && strcmp(kind,"no-sco-pcm")) {
                 int16_t tone[160]; unsigned count = hfp_rate / 100;
                 for (unsigned i = 0; i < count; i++) tone[i] = (i % (hfp_rate / 500) < hfp_rate / 1000) ? 12000 : -12000;
                 send(pcm, tone, count * 2, MSG_NOSIGNAL | MSG_DONTWAIT);
@@ -201,6 +205,7 @@ int main(int argc, char **argv) {
     }
     printf("summary a2dp_bytes=%llu hfp_bytes=%llu a2dp_nonzero=%llu hfp_nonzero=%llu\n", (unsigned long long)total[0], (unsigned long long)total[1], (unsigned long long)nonzero[0], (unsigned long long)nonzero[1]);
     if (mono_samples) fclose(mono_samples);
+    if (hifi_samples) fclose(hifi_samples);
     if (pcm >= 0) close(pcm);
     close(sockets[0]); close(sockets[1]); dbus_connection_close(bus); dbus_connection_unref(bus);
 }

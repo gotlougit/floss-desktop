@@ -9,3 +9,8 @@ publication/
 __pycache__/
 *.pyc
 pw-floss/build/
+floss-usb/*.o
+floss-usb/*.a
+floss-usb/floss-usb
+floss-usb/transport-tests
+floss-usb/usb-tests

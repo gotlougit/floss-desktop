@@ -20,14 +20,28 @@
             packages = self.packages.${system};
             module = self.nixosModules.default;
           };
+          usbReport = import ./nix/eval-module.nix {
+            inherit nixpkgs;
+            packages = self.packages.${system};
+            module = self.nixosModules.default;
+            usbTransport = true;
+          };
         in {
           module-evaluation =
             assert report.failedAssertions == [];
             assert !report.bluezService;
+            assert report.kernelPatches == [];
             # This is an evaluation report, not a request to realize every
             # store path mentioned by the evaluated system configuration.
             pkgs.writeText "floss-module-evaluation.json"
               (builtins.unsafeDiscardStringContext (builtins.toJSON report));
+          usb-transport-module-evaluation =
+            assert usbReport.failedAssertions == [];
+            assert usbReport.kernelPatches == [];
+            assert builtins.elem "hci_vhci" usbReport.usbTransport.kernelModules;
+            assert builtins.elem "floss-usb.service" usbReport.usbTransport.managerRequires;
+            pkgs.writeText "floss-usb-module-evaluation.json"
+              (builtins.unsafeDiscardStringContext (builtins.toJSON usbReport.usbTransport));
         });
       packages = forAllSystems (system:
         let
@@ -36,6 +50,7 @@
         in rec {
           pipewire = import ./nix/pipewire.nix { inherit pkgs; };
           pw-floss = import ./nix/pw-floss.nix { inherit pkgs pipewire; };
+          floss-usb = import ./nix/floss-usb.nix { inherit pkgs; };
           bluedevil = call ./nix/bluedevil.nix;
           floss = call ./nix/floss.nix;
           wireplumber = import ./nix/wireplumber.nix { inherit pkgs sources pipewire; };

@@ -17,27 +17,37 @@
     "url": "https://android.googlesource.com/platform/packages/modules/Bluetooth",
     "rev": "745ee92b87ed62b5a8a1bac47d5df8cad623bf59",
     "patch": "bluetooth-floss.patch",
-    "patchFileHash": "sha256-kAs+PJJmqy3MxwqzTW7kVfRlhjWXYR7EcpLeSC45xf4=",
-    "patchBytes": 59312,
+    "patchFileHash": "sha256-tBjFfVzEDUVz9Ne3TJJTs6a8B/3SsKWtzgZem4Z3lXA=",
+    "patchBytes": 122558,
     "extraPatches": [
       {
         "patch": "bluetooth-service-runtime.patch",
         "files": [
           "system/gd/rust/linux/"
         ],
-        "patchBytes": 79417,
-        "patchFileHash": "sha256-5shdum+hnAKn8CSLR60LANMBw/rd9YFQKBX7YRwz1Z4="
+        "patchBytes": 79321,
+        "patchFileHash": "sha256-AWoE2/nDgxm3pHMBvh43UyOJTMcl/P7wl7O8LYvQfgU="
       },
       {
         "patch": "bluetooth-codec-service.patch",
         "files": [
+          "system/stack/mmc/BUILD.gn",
           "system/stack/mmc/daemon/service.cc",
           "system/stack/mmc/daemon/service.h",
           "system/stack/mmc/codec_server/",
+          "system/stack/mmc/test/a2dp_vendor_mmc_encoder_test.cc",
           "system/stack/mmc/main.cc"
         ],
-        "patchBytes": 7325,
-        "patchFileHash": "sha256-bJRMkaIkRt01HY7F12Hrno6fK4r3FrMl3A5IPlm/IB0="
+        "patchBytes": 22695,
+        "patchFileHash": "sha256-biBFDoyRZ9CGLI00HGEmf2oyYIsHtwBcOYOaSblfQ1Y="
+      },
+      {
+        "patch": "bluetooth-usb-transport.patch",
+        "files": [
+          "system/stack/btm/btm_sco_hfp_hal_linux.cc"
+        ],
+        "patchBytes": 1825,
+        "patchFileHash": "sha256-hV/iBq7UKZy8vAS3CX2Se2kkwYnD0I4RzHdsdgUfyNk="
       }
     ]
   }

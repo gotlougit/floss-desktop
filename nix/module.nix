@@ -94,6 +94,12 @@ let
     esac
     virtual="''${instance%%_*}"
     physical="''${instance#*_}"
+    ${lib.optionalString cfg.floss.usbTransport.enable ''
+      packet_size=$(cat /run/floss-usb/sco-packet-size)
+      case "$packet_size" in 0|24|60) ;; *) echo "Invalid USB SCO packet size" >&2; exit 1 ;; esac
+      export FLOSS_HFP_SOFTWARE_HCI_TRANSPORT=true
+      export FLOSS_HFP_MSBC_PACKET_SIZE="$packet_size"
+    ''}
     exec ${floss}/bin/btadapterd --index="$virtual" --hci="$physical" --log-output=stderr
   '';
 in {
@@ -115,6 +121,7 @@ in {
       adapter = mkOption { type = types.enum [ 0 ]; default = 0; description = "Initial deployment supports only virtual adapter 0 backed by hci0."; };
       users = mkOption { type = types.listOf types.str; default = []; description = "Local users granted Bluetooth control and PCM access; membership is not seat-scoped."; };
       softwareHciTransport = mkEnableOption "software HCI SCO transport, only for a controller/kernel known to support it";
+      usbTransport.enable = mkEnableOption "the experimental userspace USB/VHCI transport for one Realtek 0bda:c123 Bluetooth adapter";
     };
   };
 
@@ -124,13 +131,16 @@ in {
     users.groups.floss-codec = {};
     users.groups.bluetooth = {};
     users.groups.bluetooth-audio = {};
+    users.groups.floss-usb = mkIf cfg.floss.usbTransport.enable {};
     users.users = (lib.genAttrs cfg.floss.users (_: {
       extraGroups = [ "bluetooth" "bluetooth-audio" ];
-    })) // {
+    })) // lib.optionalAttrs cfg.floss.usbTransport.enable {
+      floss-usb = { isSystemUser = true; group = "floss-usb"; };
+    } // {
       floss = {
         isSystemUser = true;
         group = "floss";
-        extraGroups = [ "bluetooth" "bluetooth-audio" "floss-codec" ];
+        extraGroups = [ "bluetooth" "bluetooth-audio" "floss-codec" ] ++ lib.optional cfg.floss.usbTransport.enable "floss-usb";
       };
       floss-codec = {
         isSystemUser = true;
@@ -151,15 +161,56 @@ in {
         }
       });
     '';
-    boot.kernelModules = [ "bluetooth" "btusb" "uhid" ];
+    boot.kernelModules = [ "bluetooth" "btusb" "uhid" ] ++ lib.optional cfg.floss.usbTransport.enable "hci_vhci";
     systemd.tmpfiles.rules = [
       "d /run/bluetooth 0750 floss bluetooth - -"
       "d /run/bluetooth/audio 0770 floss bluetooth-audio - -"
     ];
+    systemd.services.floss-usb = mkIf cfg.floss.usbTransport.enable {
+      description = "Floss userspace USB HCI and SCO transport";
+      wantedBy = [ "multi-user.target" ];
+      wants = [ "btmanagerd.service" ];
+      before = [ "btmanagerd.service" ];
+      after = [ "systemd-modules-load.service" "systemd-udev-trigger.service" ];
+      serviceConfig = {
+        Type = "notify";
+        NotifyAccess = "main";
+        ExecStart = "${packages.floss-usb}/bin/floss-usb";
+        User = "floss-usb";
+        Group = "floss-usb";
+        RuntimeDirectory = "floss-usb";
+        RuntimeDirectoryMode = "0750";
+        UMask = "0027";
+        Restart = "on-failure";
+        RestartSec = 5;
+        TimeoutStartSec = 30;
+        TimeoutStopSec = 10;
+        DevicePolicy = "closed";
+        DeviceAllow = [ "/dev/vhci rw" "char-usb_device rw" ];
+        CapabilityBoundingSet = [ "CAP_NET_ADMIN" "CAP_NET_RAW" ];
+        AmbientCapabilities = [ "CAP_NET_ADMIN" "CAP_NET_RAW" ];
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_BLUETOOTH" "AF_NETLINK" ];
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectControlGroups = true;
+        RestrictSUIDSGID = true;
+        RestrictNamespaces = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        SystemCallArchitectures = "native";
+      };
+    };
     systemd.services.btmanagerd = {
       description = "Floss Bluetooth manager";
       wantedBy = [ "multi-user.target" ];
-      after = [ "dbus.service" "systemd-tmpfiles-setup.service" ];
+      after = [ "dbus.service" "systemd-tmpfiles-setup.service" ] ++ lib.optional cfg.floss.usbTransport.enable "floss-usb.service";
+      requires = lib.optional cfg.floss.usbTransport.enable "floss-usb.service";
+      bindsTo = lib.optional cfg.floss.usbTransport.enable "floss-usb.service";
       wants = [ "dbus.service" ];
       path = [ pkgs.systemd ];
       preStart = ''
@@ -307,6 +358,9 @@ in {
     services.udev.extraRules = ''
       KERNEL=="uhid", GROUP="floss", MODE="0660"
       KERNEL=="rfkill", GROUP="floss", MODE="0660"
+    '' + lib.optionalString cfg.floss.usbTransport.enable ''
+      KERNEL=="vhci", GROUP="floss-usb", MODE="0660"
+      SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0bda", ATTR{idProduct}=="c123", GROUP="floss-usb", MODE="0660"
     '';
     services.pipewire.package = packages.pipewire;
     services.pipewire.extraConfig.pipewire-pulse."90-floss-passive-meters" =

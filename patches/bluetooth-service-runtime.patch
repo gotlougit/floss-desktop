@@ -1,5 +1,5 @@
 diff --git a/system/gd/rust/linux/client/src/dbus_iface.rs b/system/gd/rust/linux/client/src/dbus_iface.rs
-index 9e0f2818d1..ec630d9a36 100644
+index 9e0f281..ec630d9 100644
 --- a/system/gd/rust/linux/client/src/dbus_iface.rs
 +++ b/system/gd/rust/linux/client/src/dbus_iface.rs
 @@ -11,6 +11,7 @@ use bt_topshim::profiles::a2dp::{
@@ -99,7 +99,7 @@ index 9e0f2818d1..ec630d9a36 100644
      fn stop_sco_call(&mut self, address: RawAddress, connection_listener: File) {
          dbus_generated!()
 diff --git a/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs b/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs
-index 3cc3c91cf2..95ae4c5b5c 100644
+index 3cc3c91..95ae4c5 100644
 --- a/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs
 +++ b/system/gd/rust/linux/dbus_projection/dbus_macros/src/lib.rs
 @@ -47,6 +47,9 @@ fn debug_output_to_file(gen: &proc_macro2::TokenStream, filename: String) {
@@ -203,7 +203,7 @@ index 3cc3c91cf2..95ae4c5b5c 100644
                  self.disconnect_watcher.lock().unwrap().remove(self.remote.clone(), id)
              }
 diff --git a/system/gd/rust/linux/dbus_projection/src/lib.rs b/system/gd/rust/linux/dbus_projection/src/lib.rs
-index 4695663806..40c6136f8b 100644
+index 4695663..40c6136 100644
 --- a/system/gd/rust/linux/dbus_projection/src/lib.rs
 +++ b/system/gd/rust/linux/dbus_projection/src/lib.rs
 @@ -110,6 +110,11 @@ impl DisconnectWatcher {
@@ -219,7 +219,7 @@ index 4695663806..40c6136f8b 100644
                  // https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-owner-changed
                  let (addr, old, new) = msg.get3::<String, String, String>();
 diff --git a/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs b/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
-index 9b22d7952a..07c7f975c3 100644
+index 9b22d79..07c7f97 100644
 --- a/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
 +++ b/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
 @@ -11,7 +11,7 @@ use crate::powerd_suspend_manager::SuspendManagerContext;
@@ -283,7 +283,7 @@ index 9b22d7952a..07c7f975c3 100644
          let hci = VirtualHciIndex(hci);
          warn!("Starting {}", hci);
 diff --git a/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs b/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs
-index 116fa345e3..bdd150057e 100644
+index 116fa34..bdd1500 100644
 --- a/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs
 +++ b/system/gd/rust/linux/mgmt/src/bluetooth_manager_dbus.rs
 @@ -9,6 +9,7 @@ use btstack::RPCProxy;
@@ -326,7 +326,7 @@ index 116fa345e3..bdd150057e 100644
      fn register_callback(&mut self, callback: Box<dyn IBluetoothManagerCallback + Send>) {
          dbus_generated!()
 diff --git a/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs b/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
-index d516e005e0..db224efefe 100644
+index d516e00..db224ef 100644
 --- a/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
 +++ b/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
 @@ -10,6 +10,15 @@ pub struct AdapterWithEnabled {
@@ -363,7 +363,7 @@ index d516e005e0..db224efefe 100644
      fn register_callback(&mut self, callback: Box<dyn IBluetoothManagerCallback + Send>);
  
 diff --git a/system/gd/rust/linux/mgmt/src/lib.rs b/system/gd/rust/linux/mgmt/src/lib.rs
-index 131dd09b8e..d48d199eb4 100644
+index 131dd09..d48d199 100644
 --- a/system/gd/rust/linux/mgmt/src/lib.rs
 +++ b/system/gd/rust/linux/mgmt/src/lib.rs
 @@ -10,6 +10,7 @@ pub mod migrate;
@@ -375,7 +375,7 @@ index 131dd09b8e..d48d199eb4 100644
  
  // protoc-rust generates all modules and exports them in mod.rs
 diff --git a/system/gd/rust/linux/service/src/iface_bluetooth.rs b/system/gd/rust/linux/service/src/iface_bluetooth.rs
-index 985e7b4f38..06ee7dc291 100644
+index 985e7b4..06ee7dc 100644
 --- a/system/gd/rust/linux/service/src/iface_bluetooth.rs
 +++ b/system/gd/rust/linux/service/src/iface_bluetooth.rs
 @@ -853,6 +853,22 @@ impl IBluetoothSocketManagerCallbacks for IBluetoothSocketManagerCallbacksDBus {
@@ -528,7 +528,7 @@ index 985e7b4f38..06ee7dc291 100644
          dbus_generated!()
      }
 diff --git a/system/gd/rust/linux/service/src/iface_bluetooth_media.rs b/system/gd/rust/linux/service/src/iface_bluetooth_media.rs
-index 8da5e60683..62883d73f1 100644
+index 8da5e60..62883d7 100644
 --- a/system/gd/rust/linux/service/src/iface_bluetooth_media.rs
 +++ b/system/gd/rust/linux/service/src/iface_bluetooth_media.rs
 @@ -10,7 +10,9 @@ use bt_topshim::profiles::le_audio::{
@@ -622,7 +622,7 @@ index 8da5e60683..62883d73f1 100644
      fn stop_sco_call(&mut self, address: RawAddress, connection_listener: File) {
          dbus_generated!()
 diff --git a/system/gd/rust/linux/service/src/main.rs b/system/gd/rust/linux/service/src/main.rs
-index f326bb62ee..32e5f93a32 100644
+index f326bb6..32e5f93 100644
 --- a/system/gd/rust/linux/service/src/main.rs
 +++ b/system/gd/rust/linux/service/src/main.rs
 @@ -307,5 +307,9 @@ extern "C" fn handle_sigterm(_signum: i32) {
@@ -637,7 +637,7 @@ index f326bb62ee..32e5f93a32 100644
 +    unsafe { nix::libc::_exit(0) };
  }
 diff --git a/system/gd/rust/linux/stack/src/bluetooth_media.rs b/system/gd/rust/linux/stack/src/bluetooth_media.rs
-index c8ea9bcb7e..1a1edac546 100644
+index c8ea9bc..1a1edac 100644
 --- a/system/gd/rust/linux/stack/src/bluetooth_media.rs
 +++ b/system/gd/rust/linux/stack/src/bluetooth_media.rs
 @@ -16,6 +16,8 @@ use bt_topshim::profiles::csis::{
@@ -1185,7 +1185,7 @@ index c8ea9bcb7e..1a1edac546 100644
          match self.hfp_audio_state.get(&addr) {
              Some(BthfAudioState::Connected) => match self.hfp_cap.get(&addr) {
 diff --git a/system/gd/rust/linux/stack/src/callbacks.rs b/system/gd/rust/linux/stack/src/callbacks.rs
-index c70c69955e..e645eb4104 100644
+index c70c699..e645eb4 100644
 --- a/system/gd/rust/linux/stack/src/callbacks.rs
 +++ b/system/gd/rust/linux/stack/src/callbacks.rs
 @@ -8,7 +8,7 @@ use crate::{Message, RPCProxy};
@@ -1287,7 +1287,7 @@ index c70c69955e..e645eb4104 100644
 +
  }
 diff --git a/system/gd/rust/linux/stack/src/lib.rs b/system/gd/rust/linux/stack/src/lib.rs
-index d9f97bfa32..e954162787 100644
+index d9f97bf..e954162 100644
 --- a/system/gd/rust/linux/stack/src/lib.rs
 +++ b/system/gd/rust/linux/stack/src/lib.rs
 @@ -624,6 +624,9 @@ pub trait RPCProxy {
@@ -1301,7 +1301,7 @@ index d9f97bfa32..e954162787 100644
      fn unregister(&mut self, _id: u32) -> bool {
          false
 diff --git a/system/gd/rust/linux/stack/src/socket_manager.rs b/system/gd/rust/linux/stack/src/socket_manager.rs
-index 841bb51987..5bbc40b540 100644
+index 841bb51..5bbc40b 100644
 --- a/system/gd/rust/linux/stack/src/socket_manager.rs
 +++ b/system/gd/rust/linux/stack/src/socket_manager.rs
 @@ -1236,6 +1236,13 @@ impl BluetoothSocketManager {
@@ -1335,7 +1335,7 @@ index 841bb51987..5bbc40b540 100644
      fn listen_using_insecure_l2cap_channel(&mut self, callback: CallbackId) -> SocketResult {
 diff --git a/system/gd/rust/linux/HFP_PCM_BRIDGE.md b/system/gd/rust/linux/HFP_PCM_BRIDGE.md
 new file mode 100644
-index 0000000000..6137a81713
+index 0000000..55f7a9f
 --- /dev/null
 +++ b/system/gd/rust/linux/HFP_PCM_BRIDGE.md
 @@ -0,0 +1,193 @@
@@ -1534,7 +1534,7 @@ index 0000000000..6137a81713
 +sizes before transcoding. Desktop clients never call the codec service.
 diff --git a/system/gd/rust/linux/mgmt/src/rfkill.rs b/system/gd/rust/linux/mgmt/src/rfkill.rs
 new file mode 100644
-index 0000000000..a2d5e02d65
+index 0000000..a2d5e02
 --- /dev/null
 +++ b/system/gd/rust/linux/mgmt/src/rfkill.rs
 @@ -0,0 +1,197 @@

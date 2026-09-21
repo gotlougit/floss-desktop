@@ -10,7 +10,7 @@ let
     url = "https://android.googlesource.com/platform/packages/modules/Bluetooth/+archive/${source.rev}.tar.gz";
     hash = "sha256-CYP+7fD7C4YvwaExpd4q8ozvZv5dg1uoIWaZ0mNWxpI=";
   };
-  patches = [ ../patches/bluetooth-floss.patch ];
+  patches = [ ../patches/bluetooth-floss.patch ../patches/bluetooth-usb-transport.patch ];
   native = import ./floss-native.nix { inherit pkgs src patches deps generators version; };
   codec = import ./floss-codec.nix {
     inherit pkgs src deps generators version;

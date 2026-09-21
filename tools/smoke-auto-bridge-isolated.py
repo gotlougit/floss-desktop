@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -230,7 +231,12 @@ try:
         before = sink_volume()
         def select(profile):
             pactl('set-card-profile',card['name'],profile)
-            wait_for(lambda: cards()[0]['active_profile'] == profile, 'profile selection not published: '+profile)
+            try:
+                wait_for(lambda: cards()[0]['active_profile'] == profile, 'profile selection not published: '+profile)
+            except AssertionError:
+                (a.output/'failed-profile-card.json').write_text(json.dumps(cards(),indent=2))
+                (a.output/'failed-profile-graph.json').write_text(json.dumps(graph(),indent=2))
+                raise
         select('headset-head-unit')
         wait_for(lambda: current_profile() == 'hfp','manual HFP failed')
         time.sleep(2.5)
@@ -251,11 +257,21 @@ try:
         assert sink_volume() == before, ('stereo balance changed across profiles',before,sink_volume())
         # Old deployments saved a MONO channel map after HFP. Restoring that
         # state onto a stereo endpoint must duplicate the gain, not mute FR.
+        # Pause policy while injecting old state so its saved stereo balance
+        # cannot race the bridge repair we are specifically testing here.
+        stop(wp)
         subprocess.run([str(a.pipewire / 'bin/pw-cli'),'set-param',str(ids[sink]),'Props',
             '{ channelMap: [ MONO ] channelVolumes: [ 0.125 ] }'],env=env,check=True,timeout=5)
-        wait_for(lambda: set(sink_volume()) == {'front-left','front-right'}, 'legacy MONO layout was not repaired')
+        def mono_repaired():
+            volume = sink_volume()
+            return set(volume) == {'front-left','front-right'} and \
+                volume['front-left']['value'] == volume['front-right']['value']
+        wait_for(mono_repaired, 'legacy MONO layout was not repaired')
         repaired = sink_volume()
         assert repaired['front-left']['value'] == repaired['front-right']['value'], repaired
+        wp = start('wireplumber-restored', [str(a.wireplumber / 'bin/wireplumber'), '--profile=policy'])
+        time.sleep(1)
+        assert wp.poll() is None
         select('a2dp-sink-aac')
         time.sleep(1.5)  # Allow WirePlumber's state save timer to run.
         stop(play); stop(bridge)
@@ -267,6 +283,79 @@ try:
         stop(pulse)
         checks.append({'case':'profiles','pulseCardControls':True,'codecRequests':True,
             'manualHfpPersists':True,'fixedMusicSuppressesHfp':True,'automaticRestored':True,'stereoBalancePreserved':True,'legacyMonoRepaired':True,'savedProfileRestored':True})
+    if 'hifi-profiles' in a.cases.split(','):
+        assert a.pulse_tools, '--pulse-tools is required'
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        pulse = start('pulse-hifi-profiles', [str(a.pipewire / 'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        def pactl(*args):
+            return subprocess.check_output([str(a.pulse_tools / 'pactl'), *args], env=env, text=True, timeout=5)
+        mock, bridge = begin('ldac32', 'hifi-profiles')
+        def cards():
+            return [c for c in json.loads(pactl('-f','json','list','cards'))
+                if c['name'].startswith('floss_card.')]
+        wait_for(lambda: len(cards()) == 1, 'Floss Pulse card missing')
+        card = cards()[0]
+        expected = {'auto','a2dp-sink-sbc','a2dp-sink-aac','headset-head-unit',
+            'a2dp-sink-aptx','a2dp-sink-aptx-hd','a2dp-sink-ldac'}
+        assert set(card['profiles']) == expected, card
+        ids = node_ids()
+        sink = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Sink')
+        play = playback('hifi-profiles-play', sink)
+        for profile, codec in [('a2dp-sink-aptx',2), ('a2dp-sink-aptx-hd',3),
+                               ('a2dp-sink-ldac',4), ('a2dp-sink-aac',1)]:
+            pactl('set-card-profile', card['name'], profile)
+            wait_for(lambda: cards()[0]['active_profile'] == profile,
+                'high-fidelity profile selection failed: '+profile)
+            wait_for(lambda: f'codec-request codec={codec} accepted=1' in report('mock-hifi-profiles'),
+                'codec selection did not reach Floss: '+profile)
+            assert node_ids() == ids, 'codec switch replaced audio nodes'
+        pactl('set-card-profile', card['name'], 'headset-head-unit')
+        wait_for(lambda: current_profile() == 'hfp', 'manual HFP failed after codec switches')
+        pactl('set-card-profile', card['name'], 'a2dp-sink-ldac')
+        wait_for(lambda: cards()[0]['active_profile'] == 'a2dp-sink-ldac' and current_profile() == 'a2dp',
+            'LDAC failed after HFP')
+        assert node_ids() == ids, 'HFP round trip replaced high-fidelity nodes'
+        stop(play)
+        finish(mock,bridge)
+        stop(pulse)
+        checks.append({'case':'hifi-profiles','pulseCardControls':True,
+            'codecRequests':[2,3,4,1], 'hfpRoundTrip':True, 'stableNodes':True})
+    if 'no-sco-pcm' in a.cases.split(','):
+        mock, bridge = begin('no-sco-pcm','no-sco-pcm')
+        source = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Source')
+        ids = node_ids()
+        capture = record('no-sco-record',source)
+        wait_for(lambda: 'controller SCO transport is unavailable' in report('bridge-no-sco-pcm'),
+            'silent SCO transport was accepted')
+        wait_for(lambda: current_profile() == 'a2dp','missing SCO PCM stranded playback')
+        time.sleep(2)
+        assert node_ids() == ids, 'failed SCO probe replaced desktop endpoints'
+        assert starts('mock-no-sco-pcm','hfp') == 1, 'unusable SCO transport was retried'
+        stop(capture); finish(mock,bridge)
+        checks.append({'case':'no-sco-pcm','returnsA2dp':True,'stableNodes':True,'noRetryChurn':True})
+    if 'capture-backlog' in a.cases.split(','):
+        mock, bridge = begin('msbc', 'capture-backlog')
+        source = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Source')
+        ids = node_ids()
+        capture = record('backlog-record',source)
+        wait_for(lambda: current_profile() == 'hfp', 'backlog test failed to enter HFP')
+        # Hold only the bridge; the mock controller continues delivering SCO.
+        # On resume the capture queue must shed old PCM without removing nodes.
+        for _ in range(3):
+            os.kill(bridge.pid, signal.SIGSTOP)
+            try:
+                time.sleep(.4)
+            finally:
+                os.kill(bridge.pid, signal.SIGCONT)
+            time.sleep(.6)
+            assert node_ids() == ids, 'capture backlog replaced audio endpoints'
+            assert starts('mock-capture-backlog','hfp') == 1, 'capture backlog restarted SCO'
+        assert 'capture overrun; discarded old PCM' in report('bridge-capture-backlog'), 'capture overflow was not exercised'
+        stop(capture)
+        wait_for(lambda: current_profile() == 'a2dp', 'capture backlog prevented return to music')
+        finish(mock,bridge)
+        checks.append({'case':'capture-backlog','stableNodes':True,'stableSco':True,'returnsA2dp':True})
     if 'peak-meter' in a.cases.split(','):
         assert a.peak_meter, '--peak-meter is required'
         env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
@@ -363,7 +452,7 @@ try:
         assert bridge.poll() is None, 'bridge crashed on player disconnect'
         finish(mock, bridge)
         checks.append({'case': 'pulse-pause', 'cycles': 8, 'stableNodeIds': True})
-    for kind in (item for item in a.cases.split(',') if item not in ('profiles', 'peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
+    for kind in (item for item in a.cases.split(',') if item not in ('no-sco-pcm', 'capture-backlog', 'hifi-profiles', 'profiles', 'peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()
@@ -437,6 +526,29 @@ try:
         text = report(mock_name)
         assert int(re.search(r'a2dp_nonzero=(\d+)', text)[1]) > 4000, text
         case['a2dpNonzeroBytes'] = int(re.search(r'a2dp_nonzero=(\d+)', text)[1])
+        if kind in ('aptx','aptx-hd','ldac16','ldac24','ldac32'):
+            bits = 32 if kind == 'ldac32' else 24 if kind in ('aptx-hd','ldac24') else 16
+            rate = 96000 if kind.startswith('ldac') else 48000
+            width = bits // 8
+            data = Path('/tmp/mock-hifi.raw').read_bytes()
+            assert len(data) % (2*width) == 0, 'high-resolution PCM ended in a partial frame'
+            # Decode the actual native-side byte stream, not the PipeWire graph
+            # format declaration. Check both channel packing and sample rate.
+            left = [int.from_bytes(data[i:i+width],'little',signed=True) / (2**(bits-16))
+                for i in range(0,len(data),2*width)]
+            right = [int.from_bytes(data[i+width:i+2*width],'little',signed=True) / (2**(bits-16))
+                for i in range(0,len(data),2*width)]
+            assert left and max(abs(x) for x in left) > 7000, 'high-resolution PCM lost amplitude'
+            assert max(abs(l-r) for l,r in zip(left,right)) < 2, 'high-resolution stereo packing corrupted'
+            middle = left[len(left)//4:3*len(left)//4]
+            crossings, polarity = 0, 0
+            for sample in middle:
+                next_polarity = 1 if sample > 3000 else -1 if sample < -3000 else polarity
+                if polarity and next_polarity != polarity: crossings += 1
+                polarity = next_polarity
+            frequency = crossings * rate / len(middle) / 2
+            assert 380 < frequency < 420, ('high-resolution PCM rate/packing corrupted tone',kind,frequency)
+            case.update(playbackBits=bits,playbackRate=rate,playbackToneHz=frequency,stereoPackingVerified=True)
         if kind == 'mono':
             data = Path('/tmp/mock-mono.raw').read_bytes()
             samples = struct.unpack('<' + 'h' * (len(data) // 2), data)

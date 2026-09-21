@@ -28,11 +28,15 @@ This prevents WirePlumber from restoring a mono channel map onto stereo playback
 legacy single-channel volume state is repaired by copying its gain to both sides.
 Intentional stereo balance is preserved.
 
-PipeWire renegotiates each retained node's sample rate when profiles change. The
+PipeWire renegotiates each retained node's sample rate and sample width when profiles change. The
 bridge waits for the corresponding format callback before consuming PCM; the
 dormant microphone supplies silence while A2DP is active or SCO starts. HFP
 startup failure restores A2DP without deleting nodes, then retries after ten
-seconds if microphone demand remains. A device loss or unrecoverable transport
+seconds if microphone demand remains. If SCO connects but no microphone PCM
+arrives within two seconds, HFP is suppressed for that bridge connection and
+music is restored; this prevents repeated silent mode switches on unsupported
+host transports. Reconnecting the device or restarting the bridge allows a
+new attempt. A device loss or unrecoverable transport
 failure removes nodes and re-enumerates after a two-second backoff.
 
 The bridge does not pair or connect Bluetooth devices; BlueDevil handles that.
@@ -46,7 +50,7 @@ A standard PipeWire Device publishes profiles to PulseAudio and KDE's existing
 sound settings. No plasma-pa fork is needed:
 
 - **Automatic music / headset** follows real microphone demand.
-- **High Fidelity Playback (SBC/AAC)** requests that codec through Floss and
+- **High Fidelity Playback (SBC/AAC/aptX/aptX HD/LDAC)** requests that codec through Floss and
   keeps music mode even if an application opens the microphone. The persistent
   microphone endpoint supplies silence in this mode.
 - **Handsfree Headset** keeps HFP active, including with no recording application.
@@ -56,7 +60,7 @@ The NixOS module also makes PulseAudio monitor streams passive. Opening KDE's
 audio panel therefore does not wake idle ALSA devices and change the graph clock.
 Meters follow an already running stream; an idle microphone can show no level.
 
-Only supported SBC/AAC/HFP choices are advertised. WirePlumber saves explicit
+Only choices supported by the device's negotiated capabilities are advertised. WirePlumber saves explicit
 profile choices using its normal device-profile state. Codec selection is a
 Floss negotiation request, not proof of the over-the-air codec: inspect the
 Floss negotiation logs when verifying a real headset. Transport failures still
@@ -79,7 +83,9 @@ invalidates the connection and every old session.
 - `GetA2dpPcmConfig(token: t, callback: o) -> a{sv}` returns `ready: b`,
   `sample_rate: u`, `bits_per_sample: y`, `channels_count: y`,
   `generation: t`, and `socket_path: s`. Values come from the initialized native
-  encoder feeder. This bridge supports S16LE mono or stereo at 44100 or 48000 Hz.
+  encoder feeder. This bridge supports packed S16LE/S24LE/S32LE, mono or stereo,
+  at 44100/48000/88200/96000 Hz. Floss selects the actual valid codec format:
+  aptX uses S16LE, aptX HD uses packed S24LE, and LDAC supports all three widths.
 - `GetHfpPcmConfig(address: s) -> a{sv}` additionally returns `active: b` and
   `codec: u`. CVSD uses 8000 Hz and mSBC uses 16000 Hz, both S16LE mono.
 - `StopAudioSession(token: t, callback: o) -> b` only releases that caller's
@@ -89,6 +95,13 @@ The bridge confirms the configuration generation after connecting the fixed
 PCM socket. A2DP generation changes trigger transport refresh; socket closure
 invalidates HFP. Floss must be this integration: the bridge rejects missing format APIs
 rather than guessing a sample rate. `--pcm-rate` is no longer accepted.
+
+No kernel patches are supplied. HFP requires a controller/host transport that
+carries SCO while Floss owns the HCI user channel. The optional
+[floss-usb service](../floss-usb/README.md) supplies a userspace USB/VHCI path for
+the supported Realtek adapter. The PCM-arrival guard detects missing audio and
+restores music; it does not establish intelligible microphone audio. Physical
+validation of the new transport remains necessary.
 
 A diagnostic single session remains available:
 
@@ -108,7 +121,9 @@ waits; it is not a hard-realtime SPA backend.
 HFP drains microphone PCM continuously, including while idle, because incoming
 SCO packets clock outgoing playback. Silence fills underflow. Separate bounded
 queues preserve partial writes and reads; an incomplete sample is retained
-across reads. Queue overruns cause visible transport recovery.
+across reads. Capture overruns discard old complete samples, log the overrun,
+and retain the transport and desktop nodes. This bounds microphone latency when
+the graph stalls. Socket failures still trigger transport recovery.
 
 A2DP asynchronously polls owned native consumption position every 100 ms.
 Adaptive PipeWire resamplers reconcile graph and transport clocks using bounded

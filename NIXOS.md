@@ -2,7 +2,7 @@
 
 This flake fetches pinned upstream sources and applies the patches shipped beside
 it. No separate source checkout is a build input. Copy `flake.nix`, `flake.lock`,
-`nix/`, `patches/`, and `pw-floss/` together to use it elsewhere. The supported
+`nix/`, `patches/`, `pw-floss/`, and `floss-usb/` together to use it elsewhere. The supported
 build platform is currently x86_64-linux.
 Keep the flake's pinned Nixpkgs input: the builds use its matching Qt, KDE and
 PipeWire dependencies. Replacing that pin is a separate compatibility change.
@@ -19,7 +19,8 @@ nix flake check --no-build
 The `result/` directory contains links named `floss`, `pipewire`, `pw-floss`,
 `wireplumber`, and `bluedevil`. Individual targets such as
 `nix build .#pw-floss` are available.
-Builds disable test execution and do not start Bluetooth or audio services.
+The codec derivation runs its native encoder regression tests; other builds
+disable test execution. Builds do not start Bluetooth or audio services.
 
 ## Integrate into your NixOS configuration
 
@@ -85,7 +86,7 @@ The module installs the pinned upstream interoperability database and links it
 at the static path expected by Floss. This retains device-specific codec
 exceptions. The codec service runs under its own account; unexpected codec loss
 also stops the adapter so Floss's manager can recover it instead of leaving a
-dead AAC client active. That recovery path has been source-reviewed, not tested
+dead codec client active. That recovery path has been source-reviewed, not tested
 under an activated systemd deployment.
 
 Build your system configuration before deciding to activate it:
@@ -110,18 +111,28 @@ uses Floss's authoritative PCM format, and lets WirePlumber route ordinary audio
 streams. No terminal bridge launch or sample-rate configuration is needed.
 Normal saved output/input preferences still apply in Plasma's audio controls.
 
-Floss owns SBC/AAC encoding. AAC runs in a dedicated, sandboxed
-`floss-codec.service` using the upstream MMC codec service and FFmpeg encoder.
-The upstream AAC source advertises 44.1 kHz stereo; PipeWire resamples application
-PCM to that negotiated format. AAC requires support at the remote device.
-SBC mono and stereo feeder formats are both supported automatically.
+Floss owns SBC, AAC, aptX, aptX HD and LDAC packetization and encoding. All
+optional encoders run in the dedicated, sandboxed `floss-codec.service` over
+the upstream MMC socket boundary. AAC uses FFmpeg; aptX and aptX HD use the
+encoder sources bundled with Android Bluetooth; LDAC uses libldac. The native
+Bluetooth process links none of those codec libraries.
+
+The PCM formats are selected from the negotiated codec configuration: aptX is
+stereo signed 16-bit at 44.1 or 48 kHz; aptX HD is stereo packed signed 24-bit
+at 44.1 or 48 kHz; LDAC is stereo signed 16-, packed 24-, or 32-bit at 44.1,
+48, 88.2, or 96 kHz. AAC currently advertises 44.1 kHz stereo. PipeWire
+resamples application PCM to the selected format. Every optional codec still
+requires matching support from the remote device. LDAC queue-driven adaptive
+bitrate is not implemented across the MMC boundary; an ABR request uses the
+standard-quality mode, while explicit high, standard and mobile quality values
+are passed to the encoder. SBC mono and stereo formats remain supported.
 
 An application recording from the headset microphone triggers HFP automatically;
 two seconds after recording stops, the bridge returns to A2DP. Sink/source node
 identities survive that transition. Built-in microphone recording and passive
 level meters do not trigger HFP. A playback-only speaker gets no microphone.
 Failed HFP activation restores A2DP with a retry delay. HFP uses CVSD/mSBC rather
-than AAC; classic Bluetooth does not maintain AAC stereo during a headset call.
+than A2DP codecs; classic Bluetooth does not maintain stereo A2DP during a headset call.
 
 The initial deployment supports adapter `hci0` and one active audio device.
 Additional connected devices do not steal the active device. Disconnects and
@@ -150,7 +161,22 @@ calls still require physical-device testing. HFP requires working SCO transport
 under Floss's userspace HCI ownership. The optional
 `hardware.bluetooth.floss.softwareHciTransport` setting skips Chromium-specific
 management commands; it does not supply missing USB isochronous support. Leave
-it disabled unless that path is known to work on your controller.
+it disabled unless that path is known to work on your controller. This flake
+ships no kernel patches. On the tested Realtek 0bda:c123 adapter with the stock
+btusb path, HFP connected but delivered no microphone PCM. The new optional
+userspace transport addresses that missing path by owning USB transfers and
+presenting a stock virtual HCI device to Floss:
+
+```nix
+hardware.bluetooth.floss.usbTransport.enable = true;
+```
+
+This currently supports one Realtek 0bda:c123 controller. The helper and its
+Floss packet-size glue have been built/mock-tested; physical headset calls are
+not yet verified. See [the transport guide](floss-usb/README.md) for first
+activation, rollback and exact validation limits. The module configures packet
+size and software HCI automatically. No kernel patch or per-application audio
+setup is required. The bridge retains its missing-PCM fallback.
 
 There is no active-seat arbitration, simultaneous independent headset output,
 LE Audio/LC3 voice, OBEX transfer or general `org.bluez` compatibility. Do not run

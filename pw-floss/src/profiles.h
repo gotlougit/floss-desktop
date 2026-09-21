@@ -1,14 +1,30 @@
 /* SPDX-License-Identifier: MIT
  * Export a standard PipeWire card so desktop mixers can select profiles.
  * Included after struct bridge; transport changes run on the bridge timer. */
-static const char *profile_names[] = { "auto", "a2dp-sink-sbc", "a2dp-sink-aac", "headset-head-unit" };
+/* Indices and names are persistent WirePlumber state: append, never reorder. */
+static const int profile_codecs[] = { -1, 0, 1, -1, 2, 3, 4 };
+static const char *profile_names[] = {
+    "auto", "a2dp-sink-sbc", "a2dp-sink-aac", "headset-head-unit",
+    "a2dp-sink-aptx", "a2dp-sink-aptx-hd", "a2dp-sink-ldac" };
 static const char *profile_descriptions[] = {
     "Automatic music / headset", "High Fidelity Playback (SBC)",
-    "High Fidelity Playback (AAC)", "Handsfree Headset" };
+    "High Fidelity Playback (AAC)", "Handsfree Headset",
+    "High Fidelity Playback (aptX)", "High Fidelity Playback (aptX HD)",
+    "High Fidelity Playback (LDAC)" };
 static bool profile_available(struct bridge *b, unsigned p)
 {
-    return p == 0 || (p == 1 && b->codec_rates[0]) ||
-        (p == 2 && b->codec_rates[1]) || (p == 3 && b->microphone);
+    if (p >= SPA_N_ELEMENTS(profile_codecs)) return false;
+    if (p == 0) return true;
+    if (p == 3) return b->microphone && !b->hfp_transport_unavailable;
+    int codec = profile_codecs[p];
+    return b->codec_rates[codec] && b->codec_modes[codec] && b->codec_bits[codec];
+}
+static uint32_t available_profiles(struct bridge *b)
+{
+    uint32_t mask = 0;
+    for (unsigned p = 0; p < SPA_N_ELEMENTS(profile_codecs); p++)
+        if (profile_available(b, p)) mask |= 1u << p;
+    return mask;
 }
 static void profile_info(struct bridge *b)
 {
@@ -40,7 +56,7 @@ static int profile_enum(void *data, int seq, uint32_t id, uint32_t start,
 {
     struct bridge *b = data;
     if (id != SPA_PARAM_EnumProfile && id != SPA_PARAM_Profile) return -ENOENT;
-    for (unsigned i = start, count = 0; i < (id == SPA_PARAM_Profile ? 1u : 4u) && count < max; i++) {
+    for (unsigned i = start, count = 0; i < (id == SPA_PARAM_Profile ? 1u : SPA_N_ELEMENTS(profile_codecs)) && count < max; i++) {
         unsigned p = id == SPA_PARAM_Profile ? (unsigned)b->selected_profile : i;
         if (!profile_available(b, p)) continue;
         uint8_t storage[2048], filtered[2048];
@@ -83,7 +99,9 @@ static int profile_set(void *data, uint32_t id, uint32_t flags, const struct spa
     if (spa_pod_parse_object(param,SPA_TYPE_OBJECT_ParamProfile,NULL,
         SPA_PARAM_PROFILE_index,SPA_POD_Int(&p),
         SPA_PARAM_PROFILE_save,SPA_POD_OPT_Bool(&save)) < 0 ||
-        p < 0 || p > 3 || !profile_available(b,p)) return -EINVAL;
+        p < 0 || (unsigned)p >= SPA_N_ELEMENTS(profile_codecs) || !profile_available(b,p)) return -EINVAL;
+    if (p != b->requested_profile)
+        fprintf(stderr, "pw-floss: requested desktop profile %s\n", profile_names[p]);
     b->requested_profile = p;
     b->profile_save = save;
     return 0;
@@ -117,6 +135,7 @@ static bool setup_profiles(struct bridge *b)
     spa_hook_list_init(&b->card_listeners);
     b->card_params[0] = (struct spa_param_info){ .id=SPA_PARAM_EnumProfile, .flags=SPA_PARAM_INFO_READ };
     b->card_params[1] = (struct spa_param_info){ .id=SPA_PARAM_Profile, .flags=SPA_PARAM_INFO_READWRITE };
+    b->available_profiles = available_profiles(b);
     b->card.iface = SPA_INTERFACE_INIT(SPA_TYPE_INTERFACE_Device,SPA_VERSION_DEVICE,&profile_methods,b);
     b->card_proxy = pw_core_export(b->core,SPA_TYPE_INTERFACE_Device,
         &b->card_properties->dict,&b->card,0);
@@ -126,6 +145,14 @@ static bool setup_profiles(struct bridge *b)
 }
 static void profile_changed(struct bridge *b)
 {
+    fprintf(stderr, "pw-floss: active desktop profile %s\n", profile_names[b->selected_profile]);
+    /* Re-enumerating unchanged choices makes session policy reselect a saved
+     * profile while a new user selection is still being persisted. */
+    uint32_t mask = available_profiles(b);
+    if (mask != b->available_profiles) {
+        b->available_profiles = mask;
+        b->card_params[0].flags ^= SPA_PARAM_INFO_SERIAL;
+    }
     b->card_params[1].flags ^= SPA_PARAM_INFO_SERIAL;
     if (b->card_proxy) profile_info(b);
 }

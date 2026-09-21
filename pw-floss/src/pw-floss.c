@@ -40,7 +40,8 @@
 #define SCO_PATH "/var/run/bluetooth/audio/.sco_data"
 #define CALL_TIMEOUT_MS 3000
 #define START_TIMEOUT_MS 10000
-#define QUEUE_SIZE (48000 * 4 / 10) /* At most 100 ms at 48 kHz. */
+#define A2DP_CODEC_COUNT 5
+#define QUEUE_SIZE (96000 * 8 / 10) /* At most 100 ms of stereo S32 at 96 kHz. */
 #define TARGET_DELAY_SECONDS 0.030
 #define MAX_RATE_CORRECTION 0.01
 #define POSITION_TIMEOUT_MS 2000
@@ -78,7 +79,7 @@ struct bridge {
     struct spa_hook card_proxy_listener;
     int requested_profile, selected_profile;
     bool profile_save, repair_layout;
-    int32_t codec_rates[2], codec_modes[2];
+    int32_t codec_rates[A2DP_CODEC_COUNT], codec_modes[A2DP_CODEC_COUNT], codec_bits[A2DP_CODEC_COUNT];
 	struct pw_main_loop *main;
 	struct pw_stream *stream;
 	struct pw_stream *capture;
@@ -95,6 +96,9 @@ struct bridge {
 	dbus_uint64_t session;
 	bool hfp;
 	bool automatic, microphone, transitioning, a2dp_available;
+    bool hfp_transport_unavailable;
+    uint32_t available_profiles;
+    unsigned capture_overruns;
     bool playback_format_ready, capture_format_ready;
     int64_t discovery_deadline, hfp_retry_deadline;
 	unsigned adapter;
@@ -104,6 +108,7 @@ struct bridge {
 	bool playback_running;
 	uint32_t rate;
 	uint32_t channels;
+    uint8_t bits;
 	size_t queue_limit;
 	uint8_t queue[QUEUE_SIZE];
 	size_t read_pos, queued;
@@ -425,8 +430,8 @@ static bool get_pcm_config(struct bridge *b, struct hfp_pcm_config *config)
             strcmp(config->socket_path, SCO_PATH) == 0));
     else
         valid = (seen & 33) == 33 && (!config->ready ||
-            ((seen & 111) == 111 && config->generation && config->bits == 16 && (config->channels == 1 || config->channels == 2) &&
-             (config->rate == 44100 || config->rate == 48000) && !strcmp(config->socket_path, AUDIO_PATH)));
+            ((seen & 111) == 111 && config->generation && (config->bits == 16 || config->bits == 24 || config->bits == 32) && (config->channels == 1 || config->channels == 2) &&
+             (config->rate == 44100 || config->rate == 48000 || config->rate == 88200 || config->rate == 96000) && !strcmp(config->socket_path, AUDIO_PATH)));
 
 done:
 	if (reply)
@@ -540,7 +545,7 @@ static void poll_position(struct bridge *b)
  * A stale counter does not silently turn into an unbounded rate correction. */
 static double playback_level(struct bridge *b, uint64_t now)
 {
-    double consumed, bytes_per_second = (double)b->rate * b->channels * 2;
+    double consumed, bytes_per_second = (double)b->rate * b->channels * (b->bits / 8);
     if (b->hfp) return (double)b->voice_queued / bytes_per_second;
     if (!b->position_valid) return -1.0;
     if (now - b->position_received_ns > (uint64_t)POSITION_TIMEOUT_MS * 1000000u) {
@@ -688,6 +693,25 @@ static bool wait_start_listener(struct bridge *b, int listener, bool hfp)
 	return false;
 }
 
+/* A connected SCO link and a listening PCM socket do not prove that the
+ * controller's host transport actually delivers audio (notably USB HCI USER).
+ * Require a complete incoming sample before committing the desktop profile. */
+static bool hfp_pcm_arrives(struct bridge *b)
+{
+    int64_t deadline = monotonic_ms() + 2000;
+    while (!b->failed && !startup_cancelled && monotonic_ms() < deadline) {
+        uint8_t sample[2];
+        ssize_t n = recv(b->audio_fd, sample, sizeof(sample), MSG_PEEK | MSG_DONTWAIT);
+        if (n == sizeof(sample)) return true;
+        if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) break;
+        dispatch_bus(b);
+        poll(NULL, 0, 20);
+    }
+    b->hfp_transport_unavailable = true;
+    fail(b, "HFP connected without microphone PCM; controller SCO transport is unavailable");
+    return false;
+}
+
 static bool start_hfp(struct bridge *b)
 {
     struct hfp_pcm_config config, confirmed;
@@ -728,8 +752,9 @@ static bool start_hfp(struct bridge *b)
 				}
 				b->rate = confirmed.rate;
 				b->channels = confirmed.channels;
+				b->bits = confirmed.bits;
 				b->generation = confirmed.generation;
-				return true;
+				return hfp_pcm_arrives(b);
 			}
 			int error = errno;
 			close(b->audio_fd);
@@ -782,6 +807,7 @@ static bool start_audio(struct bridge *b)
     }
     b->rate = confirmed.rate;
     b->channels = confirmed.channels;
+    b->bits = confirmed.bits;
     b->generation = confirmed.generation;
     return true;
 }
@@ -840,7 +866,7 @@ static void voice_playback_credit(struct bridge *b, size_t incoming)
 	wanted = b->voice_credit - b->voice_credit % stride;
 	b->voice_credit -= wanted;
 	flush_audio(b);
-    if (!b->voice_primed && b->voice_queued >= (size_t)(TARGET_DELAY_SECONDS * b->rate * b->channels * 2))
+    if (!b->voice_primed && b->voice_queued >= (size_t)(TARGET_DELAY_SECONDS * b->rate * b->channels * (b->bits / 8)))
         b->voice_primed = true;
     while (wanted && b->voice_primed && b->voice_queued && !b->failed) {
 		size_t count = SPA_MIN(wanted, SPA_MIN(b->voice_queued,
@@ -879,9 +905,20 @@ static void read_capture(struct bridge *b)
 			ssize_t available = recv(b->audio_fd, &next, 1, MSG_DONTWAIT | MSG_PEEK);
 			if (available < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
 				return;
-			fail(b, available > 0 ? "microphone graph exceeded bounded jitter capacity" :
-				"Floss microphone PCM transport closed or read failed");
-			return;
+            if (available <= 0) {
+                fail(b, "Floss microphone PCM transport closed or read failed");
+                return;
+            }
+            /* A delayed graph consumer must not disconnect a working SCO
+             * link. Keep recent, complete samples and bound capture latency. */
+            size_t stride = b->channels * 2;
+            size_t keep = (size_t)(TARGET_DELAY_SECONDS * b->rate) * stride;
+            size_t drop = (b->capture_queued - keep) / stride * stride;
+            b->capture_read_pos = (b->capture_read_pos + drop) % QUEUE_SIZE;
+            b->capture_queued -= drop;
+            memset(&b->capture_clock, 0, sizeof(b->capture_clock));
+            if ((b->capture_overruns++ % 64) == 0)
+                fprintf(stderr, "pw-floss: microphone capture overrun; discarded old PCM, keeping transport\n");
 		}
 		write_pos = (b->capture_read_pos + b->capture_queued) % QUEUE_SIZE;
 		count = SPA_MIN(budget, SPA_MIN(b->queue_limit - b->capture_queued,
@@ -953,7 +990,8 @@ static void process(void *data)
     offset = d->chunk->offset % d->maxsize;
     size = SPA_MIN(d->chunk->size, d->maxsize);
     if (size && !silent && !d->data) { fail(b, "PCM payload is not mapped"); goto done; }
-    if (size % 4) {
+    const unsigned sample_bytes = b->bits / 8, frame_bytes = 2 * sample_bytes;
+    if (size % frame_bytes) {
         fail(b, "PCM chunk ends in a partial audio frame");
         goto done;
     }
@@ -962,17 +1000,26 @@ static void process(void *data)
     struct spa_data mono_data;
     if (b->channels == 1) {
         if (size / 2 > sizeof(mono)) goto done;
-        for (size_t i = 0; i < size / 4; i++) {
-            int16_t pcm[2] = { 0, 0 };
+        for (size_t i = 0; i < size / frame_bytes; i++) {
+            int64_t sum = 0;
             if (!silent) {
-                for (size_t j = 0; j < 4; j++)
-                    ((uint8_t *)pcm)[j] = ((uint8_t *)d->data)[(offset + 4*i + j) % d->maxsize];
+                for (unsigned c = 0; c < 2; c++) {
+                    uint32_t word = 0;
+                    for (unsigned j = 0; j < sample_bytes; j++)
+                        word |= (uint32_t)((uint8_t *)d->data)[(offset + frame_bytes*i + sample_bytes*c + j) % d->maxsize] << (8*j);
+                    /* Decode signed LE PCM without alignment assumptions or
+                     * shifting negative signed values. */
+                    int64_t sample = word;
+                    if (word & (UINT32_C(1) << (b->bits - 1))) sample -= INT64_C(1) << b->bits;
+                    sum += sample;
+                }
             }
-            int16_t sample = ((int32_t)pcm[0] + pcm[1]) / 2;
-            memcpy(mono + 2*i, &sample, 2);
+            uint32_t value = (uint32_t)(sum / 2);
+            for (unsigned j = 0; j < sample_bytes; j++)
+                mono[sample_bytes*i+j] = value >> (8*j);
         }
         size /= 2;
-        mono_chunk = (struct spa_chunk){ .size = size, .stride = 2 };
+        mono_chunk = (struct spa_chunk){ .size = size, .stride = sample_bytes };
         mono_data = (struct spa_data){ .data = mono, .maxsize = sizeof(mono), .chunk = &mono_chunk };
         d = &mono_data;
         offset = 0;
@@ -1094,6 +1141,11 @@ static void capture_state_changed(void *data, enum pw_stream_state old,
 		fail(b, "PipeWire microphone disconnected");
 }
 
+static enum spa_audio_format playback_format(uint8_t bits)
+{
+    return bits == 32 ? SPA_AUDIO_FORMAT_S32_LE : bits == 24 ? SPA_AUDIO_FORMAT_S24_LE : SPA_AUDIO_FORMAT_S16_LE;
+}
+
 static void playback_param_changed(void *data, uint32_t id, const struct spa_pod *param)
 {
     struct bridge *b = data;
@@ -1101,7 +1153,7 @@ static void playback_param_changed(void *data, uint32_t id, const struct spa_pod
     if (id != SPA_PARAM_Format) return;
     b->repair_layout = param != NULL;
     b->playback_format_ready = param && spa_format_audio_raw_parse(param, &info) >= 0 &&
-        info.format == SPA_AUDIO_FORMAT_S16_LE && info.rate == b->rate && info.channels == 2;
+        info.format == playback_format(b->bits) && info.rate == b->rate && info.channels == 2;
 }
 
 static void capture_param_changed(void *data, uint32_t id, const struct spa_pod *param)
@@ -1140,7 +1192,7 @@ static bool connect_stream(struct bridge *b, unsigned adapter, bool capture)
 	uint8_t pod_buffer[1024];
 	struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod_buffer, sizeof(pod_buffer));
 	struct spa_audio_info_raw format = SPA_AUDIO_INFO_RAW_INIT(
-		.format = SPA_AUDIO_FORMAT_S16_LE, .rate = capture ? b->capture_rate : b->rate,
+		.format = capture ? SPA_AUDIO_FORMAT_S16_LE : playback_format(b->bits), .rate = capture ? b->capture_rate : b->rate,
         .channels = capture ? 1 : 2);
 	const struct spa_pod *params[1];
 	struct pw_properties *props;
@@ -1226,7 +1278,7 @@ static bool discover_device(struct bridge *b)
         DBusMessageIter entries;
         const char *address = NULL, *name = NULL;
         dbus_int32_t hfp = 0;
-        int32_t codec_rates[2] = {0}, codec_modes[2] = {0};
+        int32_t codec_rates[A2DP_CODEC_COUNT] = {0}, codec_modes[A2DP_CODEC_COUNT] = {0}, codec_bits[A2DP_CODEC_COUNT] = {0};
         bool a2dp = false;
         dbus_message_iter_recurse(&devices, &entries);
         while (dbus_message_iter_get_arg_type(&entries) == DBUS_TYPE_DICT_ENTRY) {
@@ -1249,7 +1301,7 @@ static bool discover_device(struct bridge *b)
                 a2dp = dbus_message_iter_get_arg_type(&caps) != DBUS_TYPE_INVALID;
                 while (dbus_message_iter_get_arg_type(&caps) == DBUS_TYPE_ARRAY) {
                     DBusMessageIter fields;
-                    int32_t codec = -1, rates = 0, modes = 0;
+                    int32_t codec = -1, rates = 0, modes = 0, bits = 0;
                     dbus_message_iter_recurse(&caps,&fields);
                     while (dbus_message_iter_get_arg_type(&fields) == DBUS_TYPE_DICT_ENTRY) {
                         DBusMessageIter item, val; const char *field;
@@ -1260,11 +1312,16 @@ static bool discover_device(struct bridge *b)
                             if (!strcmp(field,"codec_type")) dbus_message_iter_get_basic(&val,&codec);
                             if (!strcmp(field,"sample_rate")) dbus_message_iter_get_basic(&val,&rates);
                             if (!strcmp(field,"channel_mode")) dbus_message_iter_get_basic(&val,&modes);
+                            if (!strcmp(field,"bits_per_sample")) dbus_message_iter_get_basic(&val,&bits);
                         }
                         dbus_message_iter_next(&fields);
                     }
-                    if (codec >= 0 && codec < 2) {
-                        codec_rates[codec] = rates & 1 ? 1 : rates & 2 ? 2 : 0;
+                    if (codec >= 0 && codec < A2DP_CODEC_COUNT) {
+                        codec_rates[codec] = codec == 4 && (rates & 8) ? 8 :
+                            codec == 4 && (rates & 4) ? 4 :
+                            codec >= 2 && (rates & 2) ? 2 : rates & 1 ? 1 : rates & 2 ? 2 : 0;
+                        codec_bits[codec] = codec == 4 && (bits & 4) ? 4 :
+                            codec >= 3 && (bits & 2) ? 2 : bits & 1 ? 1 : 0;
                         codec_modes[codec] = modes & 2 ? 2 : modes & 1 ? 1 : 0;
                     }
                     dbus_message_iter_next(&caps);
@@ -1276,6 +1333,7 @@ static bool discover_device(struct bridge *b)
                 (!b->address[0] || !strcasecmp(address, b->address))) {
             memcpy(b->codec_rates,codec_rates,sizeof(codec_rates));
             memcpy(b->codec_modes,codec_modes,sizeof(codec_modes));
+            memcpy(b->codec_bits,codec_bits,sizeof(codec_bits));
             bool microphone = hfp != 0;
             if (b->address[0] && microphone != b->microphone) {
                 fail(b, "headset capabilities changed; refreshing nodes");
@@ -1321,6 +1379,7 @@ static void stop_transport(struct bridge *b)
      * otherwise the second stop can race the suspend and disconnect A2DP. */
     if (b->audio_fd >= 0) { close(b->audio_fd); b->audio_fd = -1; }
     b->queued = b->capture_queued = b->voice_queued = 0;
+    b->capture_overruns = 0;
     b->read_pos = b->capture_read_pos = b->voice_read_pos = b->voice_credit = 0;
     b->voice_primed = b->capture_primed = b->position_valid = false;
     b->audio_written = b->position_bytes = b->position_ticks = 0;
@@ -1328,12 +1387,12 @@ static void stop_transport(struct bridge *b)
     memset(&b->capture_clock, 0, sizeof(b->capture_clock));
 }
 
-static bool update_format(struct pw_stream *stream, uint32_t rate, uint32_t channels)
+static bool update_format(struct pw_stream *stream, uint32_t rate, uint32_t channels, uint8_t bits)
 {
     uint8_t storage[1024];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(storage, sizeof(storage));
     struct spa_audio_info_raw format = SPA_AUDIO_INFO_RAW_INIT(
-        .format = SPA_AUDIO_FORMAT_S16_LE, .rate = rate, .channels = channels);
+        .format = playback_format(bits), .rate = rate, .channels = channels);
     const struct spa_pod *param;
     format.position[0] = channels == 1 ? SPA_AUDIO_CHANNEL_MONO : SPA_AUDIO_CHANNEL_FL;
     if (channels == 2) format.position[1] = SPA_AUDIO_CHANNEL_FR;
@@ -1358,11 +1417,12 @@ static void repair_stereo_layout(struct bridge *b)
 }
 static bool request_codec(struct bridge *b, int profile)
 {
-    if (profile != 1 && profile != 2) return true;
+    if (profile < 0 || (unsigned)profile >= SPA_N_ELEMENTS(profile_codecs)) return false;
+    if (profile_codecs[profile] < 0) return true;
     const char *address = b->address;
-    dbus_uint32_t codec = profile - 1;
-    dbus_int32_t rate = b->codec_rates[codec], bits = 1, mode = b->codec_modes[codec];
-    if (!rate || !mode) return false;
+    dbus_uint32_t codec = profile_codecs[profile];
+    dbus_int32_t rate = b->codec_rates[codec], bits = b->codec_bits[codec], mode = b->codec_modes[codec];
+    if (!rate || !bits || !mode) return false;
     int64_t deadline = monotonic_ms() + CALL_TIMEOUT_MS;
     do {
         bool accepted = false;
@@ -1390,6 +1450,7 @@ static void automatic_tick(struct bridge *b)
     bool wanted_hfp = !b->a2dp_available || (demand && now >= b->hfp_retry_deadline) ||
         (b->hfp && now - b->capture_idle_ms < 2000);
     if (b->requested_profile) wanted_hfp = b->requested_profile == 3;
+    if (b->hfp_transport_unavailable && b->a2dp_available) wanted_hfp = false;
     if (b->transitioning) return;
     if (now >= b->discovery_deadline) {
         b->discovery_deadline = now + 1000;
@@ -1408,6 +1469,7 @@ static void automatic_tick(struct bridge *b)
     bool profile_request = b->requested_profile != b->selected_profile;
     if (wanted_hfp == b->hfp && !profile_request) return;
     uint32_t old_rate = b->rate, old_capture_rate = b->capture_rate;
+    uint8_t old_bits = b->bits;
     b->transitioning = true;
     /* audioadapter marks EnumFormat changes for renegotiation on restart.
      * Suspend processing, retaining the published nodes and their links. */
@@ -1441,13 +1503,13 @@ static void automatic_tick(struct bridge *b)
         }
     }
     b->capture_rate = b->hfp ? b->rate : 16000;
-    b->queue_limit = b->rate * b->channels * 2 / 10;
-    bool playback_changed = old_rate != b->rate;
+    b->queue_limit = b->rate * b->channels * (b->bits / 8) / 10;
+    bool playback_changed = old_rate != b->rate || old_bits != b->bits;
     bool capture_changed = old_capture_rate != b->capture_rate;
     if (playback_changed) b->playback_format_ready = false;
     if (capture_changed) b->capture_format_ready = false;
-    if ((playback_changed && !update_format(b->stream, b->rate, 2)) ||
-            (b->capture && capture_changed && !update_format(b->capture, b->capture_rate, 1))) {
+    if ((playback_changed && !update_format(b->stream, b->rate, 2, b->bits)) ||
+            (b->capture && capture_changed && !update_format(b->capture, b->capture_rate, 1, 16))) {
         b->transitioning = false;
         fail(b, "could not renegotiate PipeWire profile format");
         return;
@@ -1456,7 +1518,7 @@ static void automatic_tick(struct bridge *b)
         SPA_IO_ERR | SPA_IO_HUP | (b->hfp ? SPA_IO_IN : 0), false, audio_ready, b);
     if (!b->audio_source) { b->transitioning = false; fail(b, "could not watch new audio transport"); return; }
     queue_output(b, NULL, b->hfp ? b->rate * 2 / 100 :
-        (size_t)(TARGET_DELAY_SECONDS * b->rate * b->channels * 2));
+        (size_t)(TARGET_DELAY_SECONDS * b->rate * b->channels * (b->bits / 8)));
     flush_audio(b);
     pw_stream_set_active(b->stream, true);
     if (b->capture) pw_stream_set_active(b->capture, true);
@@ -1544,7 +1606,7 @@ static int run_bridge(int argc, char **argv)
     }
     if (!(b.hfp ? start_hfp(&b) : start_audio(&b))) goto done;
     b.capture_rate = b.hfp ? b.rate : 16000;
-	b.queue_limit = b.rate * b.channels * 2 / 10;
+	b.queue_limit = b.rate * b.channels * (b.bits / 8) / 10;
 	if (b.hfp)
 		fprintf(stderr, "pw-floss: negotiated HFP PCM: %u Hz S16LE mono\n", b.rate);
 	if (startup_cancelled)
@@ -1578,7 +1640,7 @@ static int run_bridge(int argc, char **argv)
     /* Prime transport buffering. HFP graph queues separately prefill to the
      * recovery target while silence keeps the SCO transport clock running. */
     queue_output(&b, NULL, b.hfp ? b.rate * b.channels * 2 / 100 :
-            (size_t)(TARGET_DELAY_SECONDS * b.rate * b.channels * 2));
+            (size_t)(TARGET_DELAY_SECONDS * b.rate * b.channels * (b.bits / 8)));
     flush_audio(&b);
     if (!b.hfp) poll_position(&b);
 	b.starting = false;

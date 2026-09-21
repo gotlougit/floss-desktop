@@ -15,7 +15,13 @@ patches accordingly. For now my main usage is with Bluetooth audio devices.
 The flake assembles a patched Floss daemon, BlueDevil and WirePlumber, an
 upstream PipeWire build with BlueZ disabled, and the standalone `pw-floss`
 bridge. At the system level, `btmanagerd` and `btadapterd` own the Bluetooth
-controller and expose Floss over D-Bus; a separate codec service handles AAC.
+controller and expose Floss over D-Bus; a separate codec service handles AAC,
+aptX, aptX HD and LDAC.
+
+The optional Rust `floss-usb` service supplies USB SCO transport through the
+stock virtual-HCI driver for one Realtek 0bda:c123 adapter. It requires no kernel
+patch. Its code and mock tests are implemented; physical headset calls remain
+unverified. See [the transport guide](floss-usb/README.md).
 
 In each desktop session, the patched BlueDevil provides the Plasma UI, pairing
 prompts and reconnect policy. `pw-floss` controls Floss over D-Bus, transfers
@@ -25,9 +31,9 @@ profiles, codecs and transport, while PipeWire handles desktop audio mixing and
 resampling. The NixOS module supplies the service accounts, permissions, D-Bus
 policy, systemd units and package substitutions that connect these pieces.
 
-The bridge exposes a standard audio card with Automatic, SBC, AAC and
-Hands-free choices in KDE sound settings, limited to the connected device's
-capabilities. Automatic mode switches for real microphone use; passive panel
+The bridge exposes a standard audio card with Automatic, SBC, AAC, aptX,
+aptX HD, LDAC and Hands-free choices in KDE sound settings, limited to the
+connected device's capabilities. Automatic mode switches for real microphone use; passive panel
 meters leave the transport alone. See [the bridge protocol](pw-floss/PROTOCOL.md)
 for profile behavior and validation limits.
 

@@ -4,10 +4,12 @@
 patch set contains all current changes against that commit, including new
 files. Apply the primary `patch` first, then any `extraPatches` in listed order.
 The Bluetooth service runtime patch contains the Linux Rust daemon/client changes;
-the native archive needs only the primary patch, so service-only changes reuse
-the compiled native archive. The codec-service patch contains MMC daemon and
+the native archive uses the primary patch and `bluetooth-usb-transport.patch`,
+which lets the userspace transport supply its mSBC packet size. Service-only
+changes reuse the compiled native archive. The codec-service patch contains MMC daemon and
 encoder-server changes and is applied only by the separate codec derivation.
-The native daemon uses the MMC client and does not link FFmpeg into its process.
+The native daemon uses the MMC client and does not link FFmpeg, libldac, or the
+bundled aptX encoders into its process.
 `tools/export-patches.py` keeps these file sets
 separate using the manifest's `files` lists (a trailing slash includes a directory
 recursively). Native CXX bridge declarations remain in the primary patch.

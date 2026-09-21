@@ -12,7 +12,15 @@ pkgs.llvmPackages.stdenv.mkDerivation {
     runHook postUnpack
   '';
   nativeBuildInputs = with pkgs; [ gn ninja pkg-config python3 bison flex protobuf flatbuffers deps.cxxbridge generators.aconfig generators.sysprop_cpp ];
-  buildInputs = with pkgs; [ deps.libchrome deps.modp dbus openssl tinyxml-2 fmt liblc3 flatbuffers protobuf zlib gtest abseil-cpp libevent glib double-conversion re2 nss ] ++ pkgs.lib.optional buildCodec pkgs.ffmpeg-headless;
+  buildInputs = with pkgs; [ deps.libchrome deps.modp dbus openssl tinyxml-2 fmt liblc3 flatbuffers protobuf zlib gtest abseil-cpp libevent glib double-conversion re2 nss ]
+    ++ pkgs.lib.optionals buildCodec [ ffmpeg-headless ldacbt ];
+  postPatch = pkgs.lib.optionalString (!buildCodec) ''
+    # The stack needs MMC clients/protocols, not the standalone codec daemon.
+    # That daemon is built by the separate floss-codec derivation with its own
+    # service patches and encoder dependencies.
+    substituteInPlace system/stack/mmc/BUILD.gn \
+      --replace-fail '    ":mmc_service",' ""
+  '';
   configurePhase = ''
     runHook preConfigure
     export FLOSS_PLATFORM_ROOT="$(realpath ..)"
@@ -30,7 +38,7 @@ pkgs.llvmPackages.stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
     ${pkgs.lib.optionalString (!buildCodec) ''ninja -C "$CXX_OUTDIR" -j$NIX_BUILD_CORES bt:tools''}
-    ninja -C "$CXX_OUTDIR" -k 0 -j$NIX_BUILD_CORES ${if buildCodec then "bt/system/stack/mmc:mmc_service" else "bt/system/main:bluetooth-static"}
+    ninja -C "$CXX_OUTDIR" -k 0 -j$NIX_BUILD_CORES ${if buildCodec then "bt/system/stack/mmc:mmc_service bt/system/stack/mmc:a2dp_vendor_mmc_encoder_test" else "bt/system/main:bluetooth-static"}
     runHook postBuild
   '';
   installPhase = ''
@@ -47,5 +55,10 @@ pkgs.llvmPackages.stdenv.mkDerivation {
     ''}
     runHook postInstall
   '';
-  doCheck = false;
+  doCheck = buildCodec;
+  checkPhase = pkgs.lib.optionalString buildCodec ''
+    runHook preCheck
+    "$CXX_OUTDIR/a2dp_vendor_mmc_encoder_test"
+    runHook postCheck
+  '';
 }

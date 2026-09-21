@@ -1,5 +1,5 @@
 # Evaluation only: no NixOS system build or activation.
-{ nixpkgs, packages, module ? import ./module.nix { inherit packages; } }:
+{ nixpkgs, packages, module ? import ./module.nix { inherit packages; }, usbTransport ? false }:
 let
   system = import (nixpkgs + "/nixos/lib/eval-config.nix") {
     system = "x86_64-linux";
@@ -9,6 +9,7 @@ let
         system.stateVersion = "26.05";
         hardware.bluetooth.enable = true;
         hardware.bluetooth.floss.users = [ "floss-desktop" ];
+        hardware.bluetooth.floss.usbTransport.enable = usbTransport;
         users.users.floss-desktop.isNormalUser = true;
         services.pipewire.enable = true;
         services.pipewire.alsa.enable = true;
@@ -26,6 +27,12 @@ let
 in {
   failedAssertions = map (a: a.message) (builtins.filter (a: !a.assertion) cfg.assertions);
   bluezService = builtins.hasAttr "bluetooth" cfg.systemd.services;
+  kernelPatches = map (patch: patch.name) cfg.boot.kernelPatches;
+  usbTransport = if usbTransport then {
+    service = cfg.systemd.services.floss-usb.serviceConfig;
+    kernelModules = cfg.boot.kernelModules;
+    managerRequires = cfg.systemd.services.btmanagerd.requires;
+  } else null;
   manager = cfg.systemd.services.btmanagerd.serviceConfig;
   adapter = cfg.systemd.services."btadapterd@".serviceConfig;
   codec = cfg.systemd.services.floss-codec.serviceConfig;

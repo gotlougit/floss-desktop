@@ -25,6 +25,11 @@ activating host Bluetooth or audio services. Run Python entry points with
 - `smoke-kde-isolated.py` loads the built BlueDevil UI offscreen with private
   buses and the fixtures under `kde-mock/`.
 - `floss-runtime-smoke.sh` checks the packaged daemons on a private bus.
+- The automatic bridge cases `hifi-profiles`, `aptx`, `aptx-hd`, and
+  `ldac16/ldac24/ldac32` cover profile requests and PCM formats. They mock Floss
+  after the encoder boundary; real encoder tests run in the codec derivation.
+  `no-sco-pcm` checks silent HFP fallback, and `capture-backlog` pauses the bridge
+  to check bounded microphone-queue recovery without replacing desktop nodes.
 
 ## Focused checks
 
@@ -34,6 +39,8 @@ activating host Bluetooth or audio services. Run Python entry points with
   `floss-properties-smoke.sh` exercise specific production control paths.
 - The rfkill unit tests live in the patched Bluetooth source and operate only on
   temporary sysfs-shaped fixtures.
+- `floss-usb` runs Rust HCI/SCO tests and C/libusb transfer-fixture tests during
+  its Nix build. They use no real USB devices or virtual-HCI device nodes.
 
 These checks cover controlled process, IPC and codec behavior. They do not prove
 physical controller, radio, headset, kernel transport or production sandbox

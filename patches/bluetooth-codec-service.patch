@@ -1,5 +1,96 @@
+diff --git a/system/stack/mmc/BUILD.gn b/system/stack/mmc/BUILD.gn
+index dd5d130..017bac8 100644
+--- a/system/stack/mmc/BUILD.gn
++++ b/system/stack/mmc/BUILD.gn
+@@ -23,7 +23,6 @@ group("mmc") {
+     ":install_minijail_config",
+     ":install_system_service",
+     ":install_tmpfiles_config",
+-    ":mmc_service",
+     "//bt/system/stack/mmc/codec_client:libcodec_client",
+     "//bt/system/stack/mmc/proto:mmc_config_proto",
+   ]
+@@ -45,6 +44,7 @@ pkg_config("target_defaults") {
+     "//bt/system/stack/include",
+   ]
+   pkg_deps = [
++    "dbus-1",
+     "libchrome",
+   ]
+   if (use.fuzzer) {
+@@ -96,7 +96,10 @@ source_set("libmmc") {
+     "//bt/system/stack/mmc/codec_server:libcodec_server_hfp_lc3",
+   ]
+   if (defined(use.bt_nonstandard_codecs) && use.bt_nonstandard_codecs) {
+-    deps += [ "//bt/system/stack/mmc/codec_server:libcodec_server_a2dp_aac" ]
++    deps += [
++      "//bt/system/stack/mmc/codec_server:libcodec_server_a2dp_aac",
++      "//bt/system/stack/mmc/codec_server:libcodec_server_a2dp_vendor",
++    ]
+   }
+ }
+ 
+@@ -115,6 +118,21 @@ executable("mmc_service") {
+   sources = [ "main.cc" ]
+ }
+ 
++executable("a2dp_vendor_mmc_encoder_test") {
++  sources = [ "test/a2dp_vendor_mmc_encoder_test.cc" ]
++  configs += [
++    ":target_defaults",
++    "//bt/system/log:log_defaults",
++    "//bt/system:external_gtest_main",
++  ]
++  deps = [
++    "//bt/system/log:libbluetooth_log",
++    "//bt/system/stack/mmc/codec_server:libcodec_server_a2dp_vendor",
++    "//bt/system/stack/mmc/proto:mmc_config_proto",
++  ]
++  libs = [ "fmt" ]
++}
++
+ if (use.test) {
+   executable("hfp_lc3_mmc_encoder_test") {
+     sources = [
+diff --git a/system/stack/mmc/codec_server/BUILD.gn b/system/stack/mmc/codec_server/BUILD.gn
+index 0d7a3a7..4cde455 100644
+--- a/system/stack/mmc/codec_server/BUILD.gn
++++ b/system/stack/mmc/codec_server/BUILD.gn
+@@ -37,6 +37,32 @@ source_set("libcodec_server_a2dp_aac") {
+   ]
+ }
+ 
++source_set("libcodec_server_a2dp_vendor") {
++  configs += [
++    "//bt/system:target_defaults",
++    "//bt/system/stack/mmc:target_defaults",
++    "//bt/system/log:log_defaults",
++  ]
++  include_dirs = [
++    "//bt/system",
++    "//bt/system/embdrv/encoder_for_aptx/include",
++    "//bt/system/embdrv/encoder_for_aptxhd/include",
++  ]
++  pkg_deps = [ "ldacBT-enc" ]
++  deps = [ "//bt/system/stack/mmc/proto:mmc_config_proto" ]
++  sources = [
++    "a2dp_vendor_mmc_encoder.cc",
++    "//bt/system/embdrv/encoder_for_aptx/src/ProcessSubband.c",
++    "//bt/system/embdrv/encoder_for_aptx/src/QmfConv.c",
++    "//bt/system/embdrv/encoder_for_aptx/src/QuantiseDifference.c",
++    "//bt/system/embdrv/encoder_for_aptx/src/aptXbtenc.c",
++    "//bt/system/embdrv/encoder_for_aptxhd/src/ProcessSubband.c",
++    "//bt/system/embdrv/encoder_for_aptxhd/src/QmfConv.c",
++    "//bt/system/embdrv/encoder_for_aptxhd/src/QuantiseDifference.c",
++    "//bt/system/embdrv/encoder_for_aptxhd/src/aptXHDbtenc.c",
++  ]
++}
++
+ source_set("libcodec_server_hfp_lc3"){
+   configs += [
+     "//bt/system/stack/mmc:target_defaults",
 diff --git a/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc b/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc
-index 24ac4edb51..3c78107e50 100644
+index 24ac4ed..3c78107 100644
 --- a/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc
 +++ b/system/stack/mmc/codec_server/a2dp_aac_mmc_encoder.cc
 @@ -25,6 +25,8 @@ extern "C" {
@@ -79,10 +170,18 @@ index 24ac4edb51..3c78107e50 100644
    }
  
 diff --git a/system/stack/mmc/daemon/service.cc b/system/stack/mmc/daemon/service.cc
-index 0ac49a5746..43096dde45 100644
+index 0ac49a5..3eac699 100644
 --- a/system/stack/mmc/daemon/service.cc
 +++ b/system/stack/mmc/daemon/service.cc
-@@ -51,14 +51,18 @@ using namespace bluetooth;
+@@ -41,6 +41,7 @@
+ 
+ #if !defined(EXCLUDE_NONSTANDARD_CODECS)
+ #include "mmc/codec_server/a2dp_aac_mmc_encoder.h"
++#include "mmc/codec_server/a2dp_vendor_mmc_encoder.h"
+ #endif
+ 
+ namespace mmc {
+@@ -51,14 +52,18 @@ using namespace bluetooth;
  // Task that would run on the thread.
  void StartSocketListener(int fd, struct sockaddr_un addr, std::promise<void> task_ended,
                           std::unique_ptr<MmcInterface> codec_server) {
@@ -104,7 +203,7 @@ index 0ac49a5746..43096dde45 100644
      task_ended.set_value();
      return;
    }
-@@ -107,7 +111,7 @@ void StartSocketListener(int fd, struct sockaddr_un addr, std::promise<void> tas
+@@ -107,7 +112,7 @@ void StartSocketListener(int fd, struct sockaddr_un addr, std::promise<void> tas
    }
    close(client_fd);
    unlink(addr.sun_path);
@@ -113,7 +212,7 @@ index 0ac49a5746..43096dde45 100644
    task_ended.set_value();
    return;
  }
-@@ -164,6 +168,13 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+@@ -164,6 +169,13 @@ void Service::CodecInit(dbus::MethodCall* method_call,
  
    dbus::MessageWriter writer(dbus_response.get());
  
@@ -127,7 +226,18 @@ index 0ac49a5746..43096dde45 100644
    CodecInitRequest request;
    CodecInitResponse response;
  
-@@ -211,7 +222,7 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+@@ -189,6 +201,10 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+ #if !defined(EXCLUDE_NONSTANDARD_CODECS)
+   else if (request.config().has_a2dp_aac_encoder_param()) {
+     codec_server = std::make_unique<A2dpAacEncoder>();
++  } else if (request.config().has_a2dp_aptx_encoder_param()) {
++    codec_server = std::make_unique<A2dpAptxEncoder>();
++  } else if (request.config().has_a2dp_ldac_encoder_param()) {
++    codec_server = std::make_unique<A2dpLdacEncoder>();
+   }
+ #endif
+   else {
+@@ -211,7 +227,7 @@ void Service::CodecInit(dbus::MethodCall* method_call,
            std::string(kMmcSocketName) + base::UnguessableToken::Create().ToString();
    response.set_socket_token(socket_path);
  
@@ -136,7 +246,7 @@ index 0ac49a5746..43096dde45 100644
    if (skt_fd < 0) {
      std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
              method_call, kMmcServiceError,
-@@ -225,6 +236,10 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+@@ -225,6 +241,10 @@ void Service::CodecInit(dbus::MethodCall* method_call,
    unlink(addr.sun_path);
  
    if (bind(skt_fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un)) == -1) {
@@ -147,7 +257,7 @@ index 0ac49a5746..43096dde45 100644
      std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
              method_call, kMmcServiceError, "Bind socket failed: " + std::string(strerror(errno))));
      return;
-@@ -233,12 +248,20 @@ void Service::CodecInit(dbus::MethodCall* method_call,
+@@ -233,12 +253,20 @@ void Service::CodecInit(dbus::MethodCall* method_call,
    // mmc_service group can read/write the socket.
    int rc = chmod(addr.sun_path, 0770);
    if (rc < 0) {
@@ -168,7 +278,7 @@ index 0ac49a5746..43096dde45 100644
      std::move(sender).Run(dbus::ErrorResponse::FromMethodCall(
              method_call, kMmcServiceError,
              "Listen socket failed: " + std::string(strerror(errno))));
-@@ -277,6 +300,9 @@ bool Service::StartWorkerThread(int fd, struct sockaddr_un addr,
+@@ -277,6 +305,9 @@ bool Service::StartWorkerThread(int fd, struct sockaddr_un addr,
    thread_pool_.back().first->StartUp();
    if (!thread_pool_.back().first->IsRunning()) {
      log::error("Failed to start thread");
@@ -178,7 +288,7 @@ index 0ac49a5746..43096dde45 100644
      return false;
    }
  
-@@ -290,6 +316,10 @@ bool Service::StartWorkerThread(int fd, struct sockaddr_un addr,
+@@ -290,6 +321,10 @@ bool Service::StartWorkerThread(int fd, struct sockaddr_un addr,
                                                              std::move(addr), std::move(task_ended),
                                                              std::move(codec_server)))) {
      log::error("Failed to run task");
@@ -189,3 +299,323 @@ index 0ac49a5746..43096dde45 100644
      return false;
    }
  
+diff --git a/system/stack/mmc/codec_server/a2dp_vendor_mmc_encoder.cc b/system/stack/mmc/codec_server/a2dp_vendor_mmc_encoder.cc
+new file mode 100644
+index 0000000..b583622
+--- /dev/null
++++ b/system/stack/mmc/codec_server/a2dp_vendor_mmc_encoder.cc
+@@ -0,0 +1,166 @@
++/*
++ * Copyright 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ */
++
++#include "mmc/codec_server/a2dp_vendor_mmc_encoder.h"
++
++#include <bluetooth/log.h>
++#include <errno.h>
++#include <ldacBT.h>
++
++#include <array>
++#include <cstring>
++
++#include "aptXHDbtenc.h"
++#include "aptXbtenc.h"
++#include "mmc/proto/mmc_config.pb.h"
++
++namespace mmc {
++namespace {
++
++constexpr int kAptxPcmBytes = 16;   // four stereo S16 frames
++constexpr int kAptxHdPcmBytes = 24; // four stereo packed-S24 frames
++
++uint32_t ReadS24Le(const uint8_t* p) {
++  return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) |
++         (static_cast<uint32_t>(static_cast<int8_t>(p[2])) << 16);
++}
++
++}  // namespace
++
++A2dpAptxEncoder::A2dpAptxEncoder() = default;
++A2dpAptxEncoder::~A2dpAptxEncoder() { cleanup(); }
++
++int A2dpAptxEncoder::init(ConfigParam config) {
++  cleanup();
++  if (!config.has_a2dp_aptx_encoder_param()) return -EINVAL;
++  const auto variant = config.a2dp_aptx_encoder_param().variant();
++  if (variant != AptxEncoderParam::kAptxClassic && variant != AptxEncoderParam::kAptxHd) {
++    return -EINVAL;
++  }
++  hd_ = variant == AptxEncoderParam::kAptxHd;
++  const int state_size = hd_ ? SizeofAptxhdbtenc() : SizeofAptxbtenc();
++  if (state_size <= 0) return -EINVAL;
++  state_ = std::calloc(1, static_cast<size_t>(state_size));
++  if (!state_) return -ENOMEM;
++  const int rc = hd_ ? aptxhdbtenc_init(state_, 0) : aptxbtenc_init(state_, 0);
++  if (rc != 0) {
++    cleanup();
++    return -EIO;
++  }
++  return hd_ ? kAptxHdPcmBytes : kAptxPcmBytes;
++}
++
++void A2dpAptxEncoder::cleanup() {
++  std::free(state_);
++  state_ = nullptr;
++}
++
++int A2dpAptxEncoder::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len) {
++  if (!state_ || !i_buf || !o_buf) return -EINVAL;
++  if (!hd_) {
++    if (i_len <= 0 || i_len % kAptxPcmBytes != 0 || o_len < i_len / 4) return -EINVAL;
++    for (int offset = 0; offset < i_len; offset += kAptxPcmBytes) {
++      uint32_t left[4];
++      uint32_t right[4];
++      for (int i = 0; i < 4; ++i) {
++        int16_t l;
++        int16_t r;
++        std::memcpy(&l, i_buf + offset + i * 4, sizeof(l));
++        std::memcpy(&r, i_buf + offset + i * 4 + 2, sizeof(r));
++        left[i] = static_cast<uint16_t>(l);
++        right[i] = static_cast<uint16_t>(r);
++      }
++      uint16_t encoded[2];
++      if (aptxbtenc_encodestereo(state_, left, right, encoded) != 0) return -EIO;
++      const int out = offset / 4;
++      o_buf[out] = encoded[0] >> 8;
++      o_buf[out + 1] = encoded[0];
++      o_buf[out + 2] = encoded[1] >> 8;
++      o_buf[out + 3] = encoded[1];
++    }
++    return i_len / 4;
++  }
++
++  if (i_len <= 0 || i_len % kAptxHdPcmBytes != 0 || o_len < i_len / 4) return -EINVAL;
++  for (int offset = 0; offset < i_len; offset += kAptxHdPcmBytes) {
++    uint32_t left[4];
++    uint32_t right[4];
++    for (int i = 0; i < 4; ++i) {
++      left[i] = ReadS24Le(i_buf + offset + i * 6);
++      right[i] = ReadS24Le(i_buf + offset + i * 6 + 3);
++    }
++    uint32_t encoded[2];
++    if (aptxhdbtenc_encodestereo(state_, left, right, encoded) != 0) return -EIO;
++    const auto* bytes = reinterpret_cast<const uint8_t*>(encoded);
++    const int out = offset / 4;
++    o_buf[out] = bytes[2];
++    o_buf[out + 1] = bytes[1];
++    o_buf[out + 2] = bytes[0];
++    o_buf[out + 3] = bytes[6];
++    o_buf[out + 4] = bytes[5];
++    o_buf[out + 5] = bytes[4];
++  }
++  return i_len / 4;
++}
++
++A2dpLdacEncoder::A2dpLdacEncoder() = default;
++A2dpLdacEncoder::~A2dpLdacEncoder() { cleanup(); }
++
++int A2dpLdacEncoder::init(ConfigParam config) {
++  cleanup();
++  if (!config.has_a2dp_ldac_encoder_param()) return -EINVAL;
++  const auto& p = config.a2dp_ldac_encoder_param();
++  if ((p.sample_rate() != 44100 && p.sample_rate() != 48000 && p.sample_rate() != 88200 &&
++       p.sample_rate() != 96000) ||
++      (p.channel_mode() != LDACBT_CHANNEL_MODE_DUAL_CHANNEL &&
++       p.channel_mode() != LDACBT_CHANNEL_MODE_STEREO) ||
++      (p.pcm_format() != LDACBT_SMPL_FMT_S16 && p.pcm_format() != LDACBT_SMPL_FMT_S24 &&
++       p.pcm_format() != LDACBT_SMPL_FMT_S32) ||
++      p.quality_mode() < LDACBT_EQMID_HQ || p.quality_mode() > LDACBT_EQMID_MQ ||
++      p.effective_frame_size() < 679 || p.effective_frame_size() > 4096) {
++    return -EINVAL;
++  }
++  auto handle = ldacBT_get_handle();
++  if (!handle) return -ENOMEM;
++  handle_ = handle;
++  if (ldacBT_init_handle_encode(handle, p.effective_frame_size() + 12, p.quality_mode(),
++                                p.channel_mode(), static_cast<LDACBT_SMPL_FMT_T>(p.pcm_format()),
++                                p.sample_rate()) != 0) {
++    cleanup();
++    return -EINVAL;
++  }
++  input_frame_size_ = LDACBT_ENC_LSU * 2 * p.pcm_format();
++  return input_frame_size_;
++}
++
++void A2dpLdacEncoder::cleanup() {
++  if (handle_) ldacBT_free_handle(static_cast<HANDLE_LDAC_BT>(handle_));
++  handle_ = nullptr;
++  input_frame_size_ = 0;
++}
++
++int A2dpLdacEncoder::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len) {
++  if (!handle_ || !i_buf || !o_buf || i_len != input_frame_size_) return -EINVAL;
++  // ldacBT_encode() does not take an output capacity. Requiring room for its
++  // documented maximum before calling it prevents both an overwrite and an
++  // unrecoverable encoder-state advance when a caller supplies a short buffer.
++  if (o_len < LDACBT_MAX_NBYTES + 1) return -ENOSPC;
++  std::array<uint8_t, LDACBT_MAX_NBYTES> encoded{};
++  int encoded_pcm = 0;
++  int written = 0;
++  int frames = 0;
++  if (ldacBT_encode(static_cast<HANDLE_LDAC_BT>(handle_), i_buf, &encoded_pcm, encoded.data(),
++                    &written, &frames) != 0 || encoded_pcm != i_len || written < 0 ||
++      written > LDACBT_MAX_NBYTES || frames < 0 || frames > 255) {
++    return -EIO;
++  }
++  o_buf[0] = static_cast<uint8_t>(frames);
++  if (written > 0) std::memcpy(o_buf + 1, encoded.data(), static_cast<size_t>(written));
++  return written + 1;
++}
++
++}  // namespace mmc
+diff --git a/system/stack/mmc/codec_server/a2dp_vendor_mmc_encoder.h b/system/stack/mmc/codec_server/a2dp_vendor_mmc_encoder.h
+new file mode 100644
+index 0000000..4e78aff
+--- /dev/null
++++ b/system/stack/mmc/codec_server/a2dp_vendor_mmc_encoder.h
+@@ -0,0 +1,43 @@
++/*
++ * Copyright 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ */
++
++#ifndef MMC_CODEC_SERVER_A2DP_VENDOR_MMC_ENCODER_H_
++#define MMC_CODEC_SERVER_A2DP_VENDOR_MMC_ENCODER_H_
++
++#include "mmc/mmc_interface/mmc_interface.h"
++
++namespace mmc {
++
++class A2dpAptxEncoder : public MmcInterface {
++ public:
++  A2dpAptxEncoder();
++  ~A2dpAptxEncoder() override;
++  int init(ConfigParam config) override;
++  void cleanup() override;
++  int transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len) override;
++
++ private:
++  bool hd_ = false;
++  void* state_ = nullptr;
++};
++
++class A2dpLdacEncoder : public MmcInterface {
++ public:
++  A2dpLdacEncoder();
++  ~A2dpLdacEncoder() override;
++  int init(ConfigParam config) override;
++  void cleanup() override;
++  int transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len) override;
++
++ private:
++  void* handle_ = nullptr;
++  int input_frame_size_ = 0;
++};
++
++}  // namespace mmc
++
++#endif  // MMC_CODEC_SERVER_A2DP_VENDOR_MMC_ENCODER_H_
+diff --git a/system/stack/mmc/test/a2dp_vendor_mmc_encoder_test.cc b/system/stack/mmc/test/a2dp_vendor_mmc_encoder_test.cc
+new file mode 100644
+index 0000000..3b56883
+--- /dev/null
++++ b/system/stack/mmc/test/a2dp_vendor_mmc_encoder_test.cc
+@@ -0,0 +1,93 @@
++/*
++ * Copyright 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ */
++
++#include "mmc/codec_server/a2dp_vendor_mmc_encoder.h"
++
++#include <errno.h>
++#include <gtest/gtest.h>
++
++#include <array>
++#include <cstdint>
++#include <cstring>
++
++namespace mmc {
++namespace {
++
++TEST(A2dpVendorMmcEncoderTest, AptxConsumesFourStereoS16Frames) {
++  ConfigParam config;
++  config.mutable_a2dp_aptx_encoder_param()->set_variant(AptxEncoderParam::kAptxClassic);
++  A2dpAptxEncoder encoder;
++  ASSERT_EQ(16, encoder.init(config));
++  std::array<uint8_t, 16> pcm{};
++  std::memcpy(pcm.data(), "0123456789012345", pcm.size());
++  std::array<uint8_t, 4> encoded{};
++  EXPECT_EQ(4, encoder.transcode(pcm.data(), pcm.size(), encoded.data(), encoded.size()));
++  EXPECT_EQ((std::array<uint8_t, 4>{0x4b, 0xbf, 0x4b, 0xbf}), encoded);
++  EXPECT_EQ(-EINVAL, encoder.transcode(pcm.data(), 15, encoded.data(), encoded.size()));
++  EXPECT_EQ(-EINVAL, encoder.transcode(pcm.data(), 16, encoded.data(), 3));
++}
++
++TEST(A2dpVendorMmcEncoderTest, AptxHdConsumesFourStereoPackedS24Frames) {
++  ConfigParam config;
++  config.mutable_a2dp_aptx_encoder_param()->set_variant(AptxEncoderParam::kAptxHd);
++  A2dpAptxEncoder encoder;
++  ASSERT_EQ(24, encoder.init(config));
++  std::array<uint8_t, 24> pcm{};
++  std::memcpy(pcm.data(), "012345678901234567890123", pcm.size());
++  std::array<uint8_t, 6> encoded{};
++  EXPECT_EQ(6, encoder.transcode(pcm.data(), pcm.size(), encoded.data(), encoded.size()));
++  EXPECT_EQ((std::array<uint8_t, 6>{0x73, 0xbe, 0xff, 0x73, 0xbe, 0xff}), encoded);
++  EXPECT_EQ(-EINVAL, encoder.transcode(pcm.data(), 23, encoded.data(), encoded.size()));
++  EXPECT_EQ(-EINVAL, encoder.transcode(pcm.data(), 24, encoded.data(), 5));
++}
++
++TEST(A2dpVendorMmcEncoderTest, AptxRejectsUnknownVariant) {
++  ConfigParam config;
++  config.mutable_a2dp_aptx_encoder_param()->set_variant(
++          static_cast<AptxEncoderParam::Variant>(2));
++  A2dpAptxEncoder encoder;
++  EXPECT_EQ(-EINVAL, encoder.init(config));
++}
++
++TEST(A2dpVendorMmcEncoderTest, LdacReportsFramesAndEnforcesPackedPcmSize) {
++  ConfigParam config;
++  auto* param = config.mutable_a2dp_ldac_encoder_param();
++  param->set_sample_rate(96000);
++  param->set_channel_mode(1);  // LDACBT_CHANNEL_MODE_STEREO
++  param->set_pcm_format(3);    // LDACBT_SMPL_FMT_S24
++  param->set_quality_mode(1);  // LDACBT_EQMID_SQ
++  param->set_effective_frame_size(679);
++  A2dpLdacEncoder encoder;
++  ASSERT_EQ(768, encoder.init(config));
++  std::array<uint8_t, 768> pcm{};
++  for (size_t i = 0; i < pcm.size(); ++i) pcm[i] = static_cast<uint8_t>(i * 13);
++  std::array<uint8_t, 1025> encoded{};
++  EXPECT_EQ(-ENOSPC, encoder.transcode(pcm.data(), pcm.size(), encoded.data(), 1024));
++  int written = 0;
++  for (int i = 0; i < 16 && written <= 1; ++i) {
++    written = encoder.transcode(pcm.data(), pcm.size(), encoded.data(), encoded.size());
++  }
++  ASSERT_GT(written, 1);
++  EXPECT_GT(encoded[0], 0);  // transport frames represented by the payload
++  EXPECT_EQ(-EINVAL,
++            encoder.transcode(pcm.data(), pcm.size() - 1, encoded.data(), encoded.size()));
++}
++
++TEST(A2dpVendorMmcEncoderTest, LdacRejectsUnsupportedConfiguration) {
++  ConfigParam config;
++  auto* param = config.mutable_a2dp_ldac_encoder_param();
++  param->set_sample_rate(192000);
++  param->set_channel_mode(2);
++  param->set_pcm_format(2);
++  param->set_quality_mode(1);
++  param->set_effective_frame_size(679);
++  A2dpLdacEncoder encoder;
++  EXPECT_EQ(-EINVAL, encoder.init(config));
++}
++
++}  // namespace
++}  // namespace mmc

@@ -1,5 +1,5 @@
 diff --git a/flags/aconfig.gni b/flags/aconfig.gni
-index 2f5c2a1eb0..6c0168c3dc 100644
+index 2f5c2a1..6c0168c 100644
 --- a/flags/aconfig.gni
 +++ b/flags/aconfig.gni
 @@ -23,14 +23,16 @@ template("aconfig") {
@@ -56,7 +56,7 @@ index 2f5c2a1eb0..6c0168c3dc 100644
      all_dependent_configs = [ ":${all_dependent_config_name}" ]
    }
 diff --git a/sysprop/sysprop.gni b/sysprop/sysprop.gni
-index bbf5af4dbf..e809ae0064 100644
+index bbf5af4..e809ae0 100644
 --- a/sysprop/sysprop.gni
 +++ b/sysprop/sysprop.gni
 @@ -21,6 +21,8 @@
@@ -69,7 +69,7 @@ index bbf5af4dbf..e809ae0064 100644
  
    action_foreach("${target_name}_sources") {
 diff --git a/system/audio_hal_interface/a2dp_encoding_host.cc b/system/audio_hal_interface/a2dp_encoding_host.cc
-index 74e9ca38d9..092b1634c1 100644
+index 74e9ca3..092b163 100644
 --- a/system/audio_hal_interface/a2dp_encoding_host.cc
 +++ b/system/audio_hal_interface/a2dp_encoding_host.cc
 @@ -14,6 +14,9 @@
@@ -230,7 +230,7 @@ index 74e9ca38d9..092b1634c1 100644
    // MONOTONIC_RAW isn't affected by NTP, audio stack rely on this
    // to get precise delay calculation.
 diff --git a/system/audio_hal_interface/a2dp_encoding_host.h b/system/audio_hal_interface/a2dp_encoding_host.h
-index 835d50f022..900c878a53 100644
+index 835d50f..900c878 100644
 --- a/system/audio_hal_interface/a2dp_encoding_host.h
 +++ b/system/audio_hal_interface/a2dp_encoding_host.h
 @@ -25,6 +25,17 @@ namespace bluetooth {
@@ -252,7 +252,7 @@ index 835d50f022..900c878a53 100644
  struct AudioConfig {
    btav_a2dp_codec_sample_rate_t sample_rate = BTAV_A2DP_CODEC_SAMPLE_RATE_48000;
 diff --git a/system/bta/ag/bta_ag_sco.cc b/system/bta/ag/bta_ag_sco.cc
-index a5cc30f41b..a2204b6ab5 100644
+index a5cc30f..a2204b6 100644
 --- a/system/bta/ag/bta_ag_sco.cc
 +++ b/system/bta/ag/bta_ag_sco.cc
 @@ -632,8 +632,10 @@ static void bta_ag_codec_negotiation_timer_cback(void* data) {
@@ -310,7 +310,7 @@ index a5cc30f41b..a2204b6ab5 100644
      /* Subsequent SCO connection will skip codec negotiation */
      log::info("Succeeded for index 0x{:04x}, device {}", p_scb->sco_idx, p_scb->peer_addr);
 diff --git a/system/bta/bundler.gni b/system/bta/bundler.gni
-index 2942bbee1d..9cf5bfaf38 100644
+index 2942bbe..9cf5bfa 100644
 --- a/system/bta/bundler.gni
 +++ b/system/bta/bundler.gni
 @@ -37,11 +37,11 @@ template("bt_flatc_binary_schema") {
@@ -372,7 +372,7 @@ index 2942bbee1d..9cf5bfaf38 100644
  
      outputs = [
 diff --git a/system/bta/dm/bta_dm_device_search_int.h b/system/bta/dm/bta_dm_device_search_int.h
-index 35d41f1d2c..3a6cbc3e20 100644
+index 35d41f1..3a6cbc3 100644
 --- a/system/bta/dm/bta_dm_device_search_int.h
 +++ b/system/bta/dm/bta_dm_device_search_int.h
 @@ -19,6 +19,7 @@
@@ -384,7 +384,7 @@ index 35d41f1d2c..3a6cbc3e20 100644
  #include "bta/include/bta_api.h"
  #include "macros.h"
 diff --git a/system/bta/dm/bta_dm_disc_int.h b/system/bta/dm/bta_dm_disc_int.h
-index f0feb35d1b..932e5001c7 100644
+index f0feb35..932e500 100644
 --- a/system/bta/dm/bta_dm_disc_int.h
 +++ b/system/bta/dm/bta_dm_disc_int.h
 @@ -20,6 +20,7 @@
@@ -396,7 +396,7 @@ index f0feb35d1b..932e5001c7 100644
  #include "bta/dm/bta_dm_device_search_int.h"
  #include "bta/include/bta_api.h"
 diff --git a/system/bta/has/has_ctp.h b/system/bta/has/has_ctp.h
-index 4b62426f97..134e75469d 100644
+index 4b62426..134e754 100644
 --- a/system/bta/has/has_ctp.h
 +++ b/system/bta/has/has_ctp.h
 @@ -18,6 +18,7 @@
@@ -408,7 +408,7 @@ index 4b62426f97..134e75469d 100644
  #include <algorithm>
  #include <list>
 diff --git a/system/bta/include/bta_has_api.h b/system/bta/include/bta_has_api.h
-index 4abf10d6dc..70973fc32f 100644
+index 4abf10d..70973fc 100644
 --- a/system/bta/include/bta_has_api.h
 +++ b/system/bta/include/bta_has_api.h
 @@ -18,6 +18,7 @@
@@ -420,7 +420,7 @@ index 4abf10d6dc..70973fc32f 100644
  #include <string>
  
 diff --git a/system/bta/include/bta_vc_api.h b/system/bta/include/bta_vc_api.h
-index 4a4ae893b4..74b05c0fc6 100644
+index 4a4ae89..74b05c0 100644
 --- a/system/bta/include/bta_vc_api.h
 +++ b/system/bta/include/bta_vc_api.h
 @@ -18,6 +18,7 @@
@@ -432,7 +432,7 @@ index 4a4ae893b4..74b05c0fc6 100644
  
  #include <string>
 diff --git a/system/btif/include/btif_av.h b/system/btif/include/btif_av.h
-index 051e8e40b4..267172bac0 100644
+index 051e8e4..267172b 100644
 --- a/system/btif/include/btif_av.h
 +++ b/system/btif/include/btif_av.h
 @@ -350,4 +350,8 @@ bool btif_av_peer_is_sink(const RawAddress& peer_address);
@@ -445,7 +445,7 @@ index 051e8e40b4..267172bac0 100644
 +
  #endif /* BTIF_AV_H */
 diff --git a/system/btif/src/btif_a2dp_source.cc b/system/btif/src/btif_a2dp_source.cc
-index 25a5fe7093..8f00926e10 100644
+index 25a5fe7..8f00926 100644
 --- a/system/btif/src/btif_a2dp_source.cc
 +++ b/system/btif/src/btif_a2dp_source.cc
 @@ -21,6 +21,9 @@
@@ -469,7 +469,7 @@ index 25a5fe7093..8f00926e10 100644
  
    tA2DP_ENCODER_INIT_PEER_PARAMS peer_params;
 diff --git a/system/btif/src/btif_av.cc b/system/btif/src/btif_av.cc
-index e4f784a39c..463e63fa24 100644
+index e4f784a..463e63f 100644
 --- a/system/btif/src/btif_av.cc
 +++ b/system/btif/src/btif_av.cc
 @@ -28,12 +28,14 @@
@@ -526,7 +526,7 @@ index e4f784a39c..463e63fa24 100644
 +  return result;
 +}
 diff --git a/system/gd/hal/ranging_hal.h b/system/gd/hal/ranging_hal.h
-index b22378970e..7c54dccde1 100644
+index b223789..7c54dcc 100644
 --- a/system/gd/hal/ranging_hal.h
 +++ b/system/gd/hal/ranging_hal.h
 @@ -17,6 +17,7 @@
@@ -538,7 +538,7 @@ index b22378970e..7c54dccde1 100644
  #include "hci/hci_packets.h"
  #include "module.h"
 diff --git a/system/gd/hal/socket_hal.h b/system/gd/hal/socket_hal.h
-index 3922e29da0..8ead67c975 100644
+index 3922e29..8ead67c 100644
 --- a/system/gd/hal/socket_hal.h
 +++ b/system/gd/hal/socket_hal.h
 @@ -17,6 +17,7 @@
@@ -550,7 +550,7 @@ index 3922e29da0..8ead67c975 100644
  #include "module.h"
  
 diff --git a/system/gd/hci/command_interface.h b/system/gd/hci/command_interface.h
-index a6781ef7c5..84c52e95bf 100644
+index a6781ef..84c52e9 100644
 --- a/system/gd/hci/command_interface.h
 +++ b/system/gd/hci/command_interface.h
 @@ -16,6 +16,8 @@
@@ -563,7 +563,7 @@ index a6781ef7c5..84c52e95bf 100644
  #include "hci/hci_packets.h"
  #include "os/handler.h"
 diff --git a/system/gd/os/linux/system_properties.cc b/system/gd/os/linux/system_properties.cc
-index 16e474c8d2..141dd6447b 100644
+index 16e474c..141dd64 100644
 --- a/system/gd/os/linux/system_properties.cc
 +++ b/system/gd/os/linux/system_properties.cc
 @@ -24,35 +24,45 @@ namespace bluetooth {
@@ -628,7 +628,7 @@ index 16e474c8d2..141dd6447b 100644
  }
  
 diff --git a/system/gd/packet/parser/bison.gni b/system/gd/packet/parser/bison.gni
-index b52541b32f..684ef1a7cd 100644
+index b52541b..684ef1a 100644
 --- a/system/gd/packet/parser/bison.gni
 +++ b/system/gd/packet/parser/bison.gni
 @@ -36,12 +36,13 @@ template("bison_source") {
@@ -648,7 +648,7 @@ index b52541b32f..684ef1a7cd 100644
      ]
      outputs = [
 diff --git a/system/gd/packet/parser/flex.gni b/system/gd/packet/parser/flex.gni
-index b87f263f95..3b4fd28161 100644
+index b87f263..3b4fd28 100644
 --- a/system/gd/packet/parser/flex.gni
 +++ b/system/gd/packet/parser/flex.gni
 @@ -39,7 +39,7 @@ template("flex_source") {
@@ -661,7 +661,7 @@ index b87f263f95..3b4fd28161 100644
      ]
      outputs = [ outformat ]
 diff --git a/system/gd/packet/parser/packetgen.gni b/system/gd/packet/parser/packetgen.gni
-index eee0d8b94e..1e33f356b9 100644
+index eee0d8b..1e33f35 100644
 --- a/system/gd/packet/parser/packetgen.gni
 +++ b/system/gd/packet/parser/packetgen.gni
 @@ -32,23 +32,23 @@ template("packetgen_headers") {
@@ -695,7 +695,7 @@ index eee0d8b94e..1e33f356b9 100644
  
      all_dependent_configs = [ ":${all_dependent_config_name}" ]
 diff --git a/system/gd/rust/topshim/Cargo.toml b/system/gd/rust/topshim/Cargo.toml
-index 6ff28859bd..4c4e690c58 100644
+index 6ff2885..4c4e690 100644
 --- a/system/gd/rust/topshim/Cargo.toml
 +++ b/system/gd/rust/topshim/Cargo.toml
 @@ -24,7 +24,6 @@ build = "build.rs"
@@ -718,7 +718,7 @@ index 6ff28859bd..4c4e690c58 100644
  
  [lib]
 diff --git a/system/gd/rust/topshim/btav/btav_shim.cc b/system/gd/rust/topshim/btav/btav_shim.cc
-index eed0d54190..ef94675ad8 100644
+index eed0d54..ef94675 100644
 --- a/system/gd/rust/topshim/btav/btav_shim.cc
 +++ b/system/gd/rust/topshim/btav/btav_shim.cc
 @@ -17,11 +17,14 @@
@@ -838,7 +838,7 @@ index eed0d54190..ef94675ad8 100644
  
  static bluetooth::avrcp::AvrcpMediaInterfaceImpl mAvrcpInterface;
 diff --git a/system/gd/rust/topshim/btav/btav_shim.h b/system/gd/rust/topshim/btav/btav_shim.h
-index f32fb241c3..45d7326305 100644
+index f32fb24..45d7326 100644
 --- a/system/gd/rust/topshim/btav/btav_shim.h
 +++ b/system/gd/rust/topshim/btav/btav_shim.h
 @@ -29,7 +29,9 @@ namespace topshim {
@@ -866,7 +866,7 @@ index f32fb241c3..45d7326305 100644
  
  std::unique_ptr<A2dpIntf> GetA2dpProfile(const unsigned char* btif);
 diff --git a/system/gd/rust/topshim/build.rs b/system/gd/rust/topshim/build.rs
-index 5a050ef09a..d7135b5f1e 100644
+index 5a050ef..d7135b5 100644
 --- a/system/gd/rust/topshim/build.rs
 +++ b/system/gd/rust/topshim/build.rs
 @@ -48,6 +48,10 @@ fn main() {
@@ -881,7 +881,7 @@ index 5a050ef09a..d7135b5f1e 100644
          .clang_args(libchrome_paths)
          .clang_args(clang_args)
 diff --git a/system/gd/rust/topshim/hfp/hfp_shim.cc b/system/gd/rust/topshim/hfp/hfp_shim.cc
-index 02909b391d..7658599783 100644
+index 02909b3..7658599 100644
 --- a/system/gd/rust/topshim/hfp/hfp_shim.cc
 +++ b/system/gd/rust/topshim/hfp/hfp_shim.cc
 @@ -23,6 +23,7 @@
@@ -915,7 +915,7 @@ index 02909b391d..7658599783 100644
  
  int HfpIntf::set_volume(int8_t volume, RawAddress addr) {
 diff --git a/system/gd/rust/topshim/hfp/hfp_shim.h b/system/gd/rust/topshim/hfp/hfp_shim.h
-index 5503676634..8cd37014a9 100644
+index 5503676..8cd3701 100644
 --- a/system/gd/rust/topshim/hfp/hfp_shim.h
 +++ b/system/gd/rust/topshim/hfp/hfp_shim.h
 @@ -30,6 +30,7 @@ namespace rust {
@@ -935,7 +935,7 @@ index 5503676634..8cd37014a9 100644
    int set_volume(int8_t volume, RawAddress addr);
    uint32_t set_mic_volume(int8_t volume, RawAddress addr);
 diff --git a/system/gd/rust/topshim/macros/Cargo.toml b/system/gd/rust/topshim/macros/Cargo.toml
-index 4278e14903..7680e9597f 100644
+index 4278e14..7680e95 100644
 --- a/system/gd/rust/topshim/macros/Cargo.toml
 +++ b/system/gd/rust/topshim/macros/Cargo.toml
 @@ -7,6 +7,6 @@ edition = "2018"
@@ -947,7 +947,7 @@ index 4278e14903..7680e9597f 100644
  quote = "1.0"
  proc-macro2 = "1.0"
 diff --git a/system/gd/rust/topshim/src/profiles/a2dp.rs b/system/gd/rust/topshim/src/profiles/a2dp.rs
-index 41a6d7cbae..8a277dd484 100644
+index 41a6d7c..8a277dd 100644
 --- a/system/gd/rust/topshim/src/profiles/a2dp.rs
 +++ b/system/gd/rust/topshim/src/profiles/a2dp.rs
 @@ -191,6 +191,21 @@ impl TryFrom<i32> for A2dpCodecChannelMode {
@@ -1017,7 +1017,7 @@ index 41a6d7cbae..8a277dd484 100644
          self.internal.get_presentation_position()
      }
 diff --git a/system/gd/rust/topshim/src/profiles/hfp.rs b/system/gd/rust/topshim/src/profiles/hfp.rs
-index ae3f1b0b95..910f6f4e6e 100644
+index ae3f1b0..910f6f4 100644
 --- a/system/gd/rust/topshim/src/profiles/hfp.rs
 +++ b/system/gd/rust/topshim/src/profiles/hfp.rs
 @@ -137,6 +137,18 @@ impl TryFrom<i32> for HfpCodecFormat {
@@ -1060,10 +1060,25 @@ index ae3f1b0b95..910f6f4e6e 100644
      pub fn new(intf: &BluetoothInterface) -> Hfp {
          let hfpif: cxx::UniquePtr<ffi::HfpIntf>;
 diff --git a/system/stack/BUILD.gn b/system/stack/BUILD.gn
-index d078d1bc14..6226d0a9e5 100644
+index d078d1b..e268082 100644
 --- a/system/stack/BUILD.gn
 +++ b/system/stack/BUILD.gn
-@@ -218,6 +218,9 @@ source_set("stack") {
+@@ -22,10 +22,13 @@ source_set("nonstandard_codecs") {
+       "a2dp/a2dp_aac_decoder_linux.cc",
+       "a2dp/a2dp_aac_encoder_linux.cc",
+       "a2dp/a2dp_vendor.cc",
+-      # Following are unimplemented
++      "a2dp/a2dp_vendor_aptx.cc",
+       "a2dp/a2dp_vendor_aptx_linux.cc",
++      "a2dp/a2dp_vendor_aptx_hd.cc",
+       "a2dp/a2dp_vendor_aptx_hd_linux.cc",
++      "a2dp/a2dp_vendor_ldac.cc",
+       "a2dp/a2dp_vendor_ldac_linux.cc",
++      # Opus remains unimplemented on Linux.
+       "a2dp/a2dp_vendor_opus_linux.cc",
+     ]
+ 
+@@ -218,6 +221,9 @@ source_set("stack") {
    ]
  
    deps = [
@@ -1074,7 +1089,7 @@ index d078d1bc14..6226d0a9e5 100644
      "//bt/system/gd/crypto_toolbox:crypto_toolbox",
      "//bt/system/gd/rust/topshim:cxxlibheader",
 diff --git a/system/stack/a2dp/a2dp_aac_encoder_linux.cc b/system/stack/a2dp/a2dp_aac_encoder_linux.cc
-index 0388840cd6..c23529b60b 100644
+index 0388840..c23529b 100644
 --- a/system/stack/a2dp/a2dp_aac_encoder_linux.cc
 +++ b/system/stack/a2dp/a2dp_aac_encoder_linux.cc
 @@ -16,6 +16,10 @@
@@ -1141,7 +1156,7 @@ index 0388840cd6..c23529b60b 100644
  
      if (written < 0) {
 diff --git a/system/stack/a2dp/a2dp_sbc_encoder.cc b/system/stack/a2dp/a2dp_sbc_encoder.cc
-index fb455e219b..5bdf041b2a 100644
+index fb455e2..5bdf041 100644
 --- a/system/stack/a2dp/a2dp_sbc_encoder.cc
 +++ b/system/stack/a2dp/a2dp_sbc_encoder.cc
 @@ -19,6 +19,10 @@
@@ -1182,8 +1197,1516 @@ index fb455e219b..5bdf041b2a 100644
    memset(&a2dp_sbc_encoder_cb, 0, sizeof(a2dp_sbc_encoder_cb));
  }
  
+diff --git a/system/stack/a2dp/a2dp_vendor_aptx_hd_linux.cc b/system/stack/a2dp/a2dp_vendor_aptx_hd_linux.cc
+index fd4e0ed..36a1f54 100644
+--- a/system/stack/a2dp/a2dp_vendor_aptx_hd_linux.cc
++++ b/system/stack/a2dp/a2dp_vendor_aptx_hd_linux.cc
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2023 The Android Open Source Project
++ * Copyright 2016 The Android Open Source Project
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -14,100 +14,379 @@
+  * limitations under the License.
+  */
+ 
+-// Stubbed non-standard codec
++#define LOG_TAG "bluetooth-a2dp"
+ 
+-#include <cstdint>
++#include "a2dp_vendor_aptx_hd_encoder.h"
+ 
+-#include "a2dp_vendor_aptx_hd.h"
++#if defined(TARGET_FLOSS)
++#include "audio_hal_interface/a2dp_encoding_host.h"
++#endif
+ 
+-bool A2DP_IsCodecValidAptxHd(const uint8_t* p_codec_info) { return false; }
++#include <bluetooth/log.h>
++#include <inttypes.h>
++#include <stdio.h>
++#include <string.h>
+ 
+-bool A2DP_VendorUsesRtpHeaderAptxHd(bool content_protection_enabled,
+-                                    const uint8_t* p_codec_info) {
+-  return false;
+-}
++#include <cstdint>
++#include <memory>
+ 
+-const char* A2DP_VendorCodecNameAptxHd(const uint8_t* p_codec_info) {
+-  return "AptxHd";
++#include "a2dp_codec_api.h"
++#include "a2dp_vendor.h"
++#include "a2dp_vendor_aptx_hd.h"
++#include "avdt_api.h"
++#include "common/time_util.h"
++#include "internal_include/bt_target.h"
++#include "mmc/codec_client/codec_client.h"
++#include "mmc/proto/mmc_config.pb.h"
++#include "osi/include/allocator.h"
++#include "stack/include/bt_hdr.h"
++
++using namespace bluetooth;
++
++//
++// Encoder for aptX-HD Source Codec
++//
++
++// offset
++#define A2DP_APTX_HD_OFFSET AVDT_MEDIA_OFFSET
++
++#define A2DP_APTX_HD_MAX_PCM_BYTES_PER_READ 4096
++
++typedef struct {
++  uint64_t sleep_time_ns;
++  uint32_t pcm_reads;
++  uint32_t pcm_bytes_per_read;
++  uint32_t aptx_hd_bytes;
++  uint32_t frame_size_counter;
++} tAPTX_HD_FRAMING_PARAMS;
++
++typedef struct {
++  uint64_t session_start_us;
++
++  size_t media_read_total_expected_packets;
++  size_t media_read_total_expected_reads_count;
++  size_t media_read_total_expected_read_bytes;
++
++  size_t media_read_total_dropped_packets;
++  size_t media_read_total_actual_reads_count;
++  size_t media_read_total_actual_read_bytes;
++} a2dp_aptx_hd_encoder_stats_t;
++
++typedef struct {
++  a2dp_source_read_callback_t read_callback;
++  a2dp_source_enqueue_callback_t enqueue_callback;
++
++  bool use_SCMS_T;
++  tA2DP_ENCODER_INIT_PEER_PARAMS peer_params;
++  uint32_t timestamp;  // Timestamp for the A2DP frames
++
++  tA2DP_FEEDING_PARAMS feeding_params;
++  tAPTX_HD_FRAMING_PARAMS framing_params;
++  a2dp_aptx_hd_encoder_stats_t stats;
++} tA2DP_APTX_HD_ENCODER_CB;
++
++static tA2DP_APTX_HD_ENCODER_CB a2dp_aptx_hd_encoder_cb;
++static std::unique_ptr<mmc::CodecClient> codec_client;
++
++static void a2dp_vendor_aptx_hd_encoder_update(A2dpCodecConfig* a2dp_codec_config,
++                                               bool* p_restart_input, bool* p_restart_output,
++                                               bool* p_config_updated);
++static void aptx_hd_init_framing_params(tAPTX_HD_FRAMING_PARAMS* framing_params);
++static void aptx_hd_update_framing_params(tAPTX_HD_FRAMING_PARAMS* framing_params);
++static size_t aptx_hd_encode_24bit(tAPTX_HD_FRAMING_PARAMS* framing_params, size_t* data_out_index,
++                                   uint32_t* data32_in, uint8_t* data_out);
++
++/*******************************************************************************
++ *
++ * Function         A2DP_VendorLoadEncoderAptxHd
++ *
++ * Description      This function will try to load the aptx HD encoder library.
++ *
++ * Returns          LOAD_SUCCESS on success
++ *                  LOAD_ERROR_MISSING_CODEC on missing library
++ *                  LOAD_ERROR_VERSION_MISMATCH on symbol loading error
++ *
++ ******************************************************************************/
++tLOADING_CODEC_STATUS A2DP_VendorLoadEncoderAptxHd(void) {
++  // Nothing to do - the library is statically linked
++  return LOAD_SUCCESS;
+ }
+ 
+-bool A2DP_VendorCodecTypeEqualsAptxHd(const uint8_t* p_codec_info_a,
+-                                      const uint8_t* p_codec_info_b) {
++bool A2DP_VendorCopyAptxHdApi(tAPTX_HD_API& external_api) {
++  external_api = {};
+   return false;
+ }
+ 
+-bool A2DP_VendorCodecEqualsAptxHd(const uint8_t* p_codec_info_a, const uint8_t* p_codec_info_b) {
+-  return false;
++void A2DP_VendorUnloadEncoderAptxHd(void) {
++  a2dp_vendor_aptx_hd_encoder_cleanup();
+ }
+ 
+-int A2DP_VendorGetBitRateAptxHd(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetTrackSampleRateAptxHd(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetTrackBitsPerSampleAptxHd(const uint8_t* p_codec_info) { return -1; }
++void a2dp_vendor_aptx_hd_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
++                                      A2dpCodecConfig* a2dp_codec_config,
++                                      a2dp_source_read_callback_t read_callback,
++                                      a2dp_source_enqueue_callback_t enqueue_callback) {
++  a2dp_vendor_aptx_hd_encoder_cleanup();
++
++  a2dp_aptx_hd_encoder_cb.stats.session_start_us = bluetooth::common::time_get_os_boottime_us();
++
++  a2dp_aptx_hd_encoder_cb.read_callback = read_callback;
++  a2dp_aptx_hd_encoder_cb.enqueue_callback = enqueue_callback;
++  a2dp_aptx_hd_encoder_cb.peer_params = *p_peer_params;
++  a2dp_aptx_hd_encoder_cb.timestamp = 0;
++
++  /* aptX-HD encoder config */
++  a2dp_aptx_hd_encoder_cb.use_SCMS_T = false;
++
++  // NOTE: Ignore the restart_input / restart_output flags - this initization
++  // happens when the audio session is (re)started.
++  bool restart_input = false;
++  bool restart_output = false;
++  bool config_updated = false;
++  a2dp_vendor_aptx_hd_encoder_update(a2dp_codec_config, &restart_input, &restart_output,
++                                     &config_updated);
++  mmc::ConfigParam config;
++  config.mutable_a2dp_aptx_encoder_param()->set_variant(mmc::AptxEncoderParam::kAptxHd);
++  codec_client = std::make_unique<mmc::CodecClient>();
++  if (codec_client->init(config) != 24) {
++    log::error("Cannot initialize sandboxed aptX HD encoder");
++    a2dp_vendor_aptx_hd_encoder_cleanup();
++    return;
++  }
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(
++          a2dp_aptx_hd_encoder_cb.feeding_params.sample_rate,
++          a2dp_aptx_hd_encoder_cb.feeding_params.bits_per_sample,
++          a2dp_aptx_hd_encoder_cb.feeding_params.channel_count);
++#endif
++}
+ 
+-int A2DP_VendorGetTrackChannelCountAptxHd(const uint8_t* p_codec_info) { return -1; }
++// Update the A2DP aptX-HD encoder.
++// |a2dp_codec_config| is the A2DP codec to use for the update.
++static void a2dp_vendor_aptx_hd_encoder_update(A2dpCodecConfig* a2dp_codec_config,
++                                               bool* p_restart_input, bool* p_restart_output,
++                                               bool* p_config_updated) {
++  uint8_t codec_info[AVDT_CODEC_SIZE];
++
++  *p_restart_input = false;
++  *p_restart_output = false;
++  *p_config_updated = false;
++  if (!a2dp_codec_config->copyOutOtaCodecConfig(codec_info)) {
++    log::error("Cannot update the codec encoder for {}: invalid codec config",
++               a2dp_codec_config->name());
++    return;
++  }
++  const uint8_t* p_codec_info = codec_info;
++
++  // The feeding parameters
++  tA2DP_FEEDING_PARAMS* p_feeding_params = &a2dp_aptx_hd_encoder_cb.feeding_params;
++  p_feeding_params->sample_rate = A2DP_VendorGetTrackSampleRateAptxHd(p_codec_info);
++  p_feeding_params->bits_per_sample = a2dp_codec_config->getAudioBitsPerSample();
++  p_feeding_params->channel_count = A2DP_VendorGetTrackChannelCountAptxHd(p_codec_info);
++  log::info("sample_rate={} bits_per_sample={} channel_count={}", p_feeding_params->sample_rate,
++            p_feeding_params->bits_per_sample, p_feeding_params->channel_count);
++  a2dp_vendor_aptx_hd_feeding_reset();
++}
+ 
+-int A2DP_VendorGetSinkTrackChannelTypeAptxHd(const uint8_t* p_codec_info) { return -1; }
++void a2dp_vendor_aptx_hd_encoder_cleanup(void) {
++  codec_client.reset();
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
++  memset(&a2dp_aptx_hd_encoder_cb, 0, sizeof(a2dp_aptx_hd_encoder_cb));
++}
+ 
+-int A2DP_VendorGetChannelModeCodeAptxHd(const uint8_t* p_codec_info) { return -1; }
++//
++// Initialize the framing parameters, and set those that don't change
++// while streaming (e.g., 'sleep_time_ns').
++//
++static void aptx_hd_init_framing_params(tAPTX_HD_FRAMING_PARAMS* framing_params) {
++  framing_params->sleep_time_ns = 0;
++  framing_params->pcm_reads = 0;
++  framing_params->pcm_bytes_per_read = 0;
++  framing_params->aptx_hd_bytes = 0;
++  framing_params->frame_size_counter = 0;
+ 
+-int A2DP_VendorGetFrameSizeAptxHd(const uint8_t* p_codec_info) { return -1; }
++  framing_params->sleep_time_ns = 9000000;
+ 
+-bool A2DP_VendorGetPacketTimestampAptxHd(const uint8_t* p_codec_info, const uint8_t* p_data,
+-                                         uint32_t* p_timestamp) {
+-  return false;
++  log::info("sleep_time_ns={}", framing_params->sleep_time_ns);
+ }
+ 
+-bool A2DP_VendorBuildCodecHeaderAptxHd(const uint8_t* p_codec_info, BT_HDR* p_buf,
+-                                       uint16_t frames_per_packet) {
+-  return false;
++//
++// Set frame size and transmission interval needed to stream the required
++// sample rate using 2-DH5 packets for aptX and 2-DH3 packets for aptX-LL.
++// With SCMS-T enabled we need to reserve room for extra headers added later.
++// Packets are always sent at equals time intervals but to achieve the
++// required sample rate, the frame size needs to change on occasion.
++//
++// Also need to specify how many of the required PCM samples are read at a
++// time:
++//     aptx_bytes = pcm_reads * pcm_bytes_per_read / 4
++// and
++//     number of aptX samples produced = pcm_bytes_per_read / 16
++//
++static void aptx_hd_update_framing_params(tAPTX_HD_FRAMING_PARAMS* framing_params) {
++  if (a2dp_aptx_hd_encoder_cb.feeding_params.sample_rate == 48000) {
++    framing_params->aptx_hd_bytes = 648;
++    framing_params->pcm_bytes_per_read = 24;
++    framing_params->pcm_reads = 108;
++  } else {
++    // Assume the sample rate is 44100
++
++    //
++    // Total of 80 iterations:
++    // - Iteration 80: packet size 648, with 108 reads of 24 PCM bytes
++    // - Iterations 20, 40, 60: packet size 612, with 102 reads of 24 PCM bytes
++    // - All other iterations: packet size 594, with 99 reads of 24 PCM bytes
++    //
++    if (framing_params->frame_size_counter + 1 == 80) {
++      framing_params->aptx_hd_bytes = 648;
++      framing_params->pcm_bytes_per_read = 24;
++      framing_params->pcm_reads = 108;
++    } else if (((framing_params->frame_size_counter + 1) % 20) == 0) {
++      framing_params->aptx_hd_bytes = 612;
++      framing_params->pcm_bytes_per_read = 24;
++      framing_params->pcm_reads = 102;
++    } else {
++      framing_params->aptx_hd_bytes = 594;
++      framing_params->pcm_bytes_per_read = 24;
++      framing_params->pcm_reads = 99;
++    }
++    framing_params->frame_size_counter++;
++    if (framing_params->frame_size_counter == 80) {
++      framing_params->frame_size_counter = 0;
++    }
++  }
++
++  log::verbose(
++          "sleep_time_ns={} aptx_hd_bytes={} pcm_bytes_per_read={} pcm_reads={} "
++          "frame_size_counter={}",
++          framing_params->sleep_time_ns, framing_params->aptx_hd_bytes,
++          framing_params->pcm_bytes_per_read, framing_params->pcm_reads,
++          framing_params->frame_size_counter);
+ }
+ 
+-std::string A2DP_VendorCodecInfoStringAptxHd(const uint8_t* p_codec_info) {
+-  return "Unsupported codec: AptxHd";
++void a2dp_vendor_aptx_hd_feeding_reset(void) {
++  aptx_hd_init_framing_params(&a2dp_aptx_hd_encoder_cb.framing_params);
+ }
+ 
+-const tA2DP_ENCODER_INTERFACE* A2DP_VendorGetEncoderInterfaceAptxHd(const uint8_t* p_codec_info) {
+-  return nullptr;
++void a2dp_vendor_aptx_hd_feeding_flush(void) {
++  aptx_hd_init_framing_params(&a2dp_aptx_hd_encoder_cb.framing_params);
+ }
+ 
+-const tA2DP_DECODER_INTERFACE* A2DP_VendorGetDecoderInterfaceAptxHd(const uint8_t* p_codec_info) {
+-  return nullptr;
++uint64_t a2dp_vendor_aptx_hd_get_encoder_interval_ms(void) {
++  return a2dp_aptx_hd_encoder_cb.framing_params.sleep_time_ns / (1000 * 1000);
+ }
+ 
+-bool A2DP_VendorAdjustCodecAptxHd(uint8_t* p_codec_info) { return false; }
+-
+-btav_a2dp_codec_index_t A2DP_VendorSourceCodecIndexAptxHd(const uint8_t* p_codec_info) {
+-  return BTAV_A2DP_CODEC_INDEX_MAX;
++int a2dp_vendor_aptx_hd_get_effective_frame_size() {
++  return a2dp_aptx_hd_encoder_cb.peer_params.peer_mtu;
+ }
+ 
+-btav_a2dp_codec_index_t A2DP_VendorSinkCodecIndexAptxHd(const uint8_t* p_codec_info) {
+-  return BTAV_A2DP_CODEC_INDEX_MAX;
++void a2dp_vendor_aptx_hd_send_frames(uint64_t /* timestamp_us */) {
++  tAPTX_HD_FRAMING_PARAMS* framing_params = &a2dp_aptx_hd_encoder_cb.framing_params;
++
++  // Prepare the packet to send
++  BT_HDR* p_buf = (BT_HDR*)osi_malloc(BT_DEFAULT_BUFFER_SIZE);
++  p_buf->offset = A2DP_APTX_HD_OFFSET;
++  p_buf->len = 0;
++  p_buf->layer_specific = 0;
++
++  uint8_t* encoded_ptr = (uint8_t*)(p_buf + 1);
++  encoded_ptr += p_buf->offset;
++
++  aptx_hd_update_framing_params(framing_params);
++
++  //
++  // Read the PCM data and encode it
++  //
++  uint32_t read_buffer32[A2DP_APTX_HD_MAX_PCM_BYTES_PER_READ / sizeof(uint32_t)];
++  uint32_t expected_read_bytes = framing_params->pcm_reads * framing_params->pcm_bytes_per_read;
++  size_t encoded_ptr_index = 0;
++  size_t pcm_bytes_encoded = 0;
++  uint32_t bytes_read = 0;
++
++  a2dp_aptx_hd_encoder_cb.stats.media_read_total_expected_packets++;
++  a2dp_aptx_hd_encoder_cb.stats.media_read_total_expected_reads_count++;
++  a2dp_aptx_hd_encoder_cb.stats.media_read_total_expected_read_bytes += expected_read_bytes;
++
++  log::verbose("PCM read of size {}", expected_read_bytes);
++  bytes_read = a2dp_aptx_hd_encoder_cb.read_callback((uint8_t*)read_buffer32, expected_read_bytes);
++  a2dp_aptx_hd_encoder_cb.stats.media_read_total_actual_read_bytes += bytes_read;
++  if (bytes_read < expected_read_bytes) {
++    log::warn("underflow at PCM reading: read {} bytes instead of {}", bytes_read,
++              expected_read_bytes);
++    a2dp_aptx_hd_encoder_cb.stats.media_read_total_dropped_packets++;
++    osi_free(p_buf);
++    return;
++  }
++  a2dp_aptx_hd_encoder_cb.stats.media_read_total_actual_reads_count++;
++
++  for (uint32_t reads = 0, offset = 0; reads < framing_params->pcm_reads;
++       reads++, offset += framing_params->pcm_bytes_per_read / sizeof(uint32_t)) {
++    const size_t encoded = aptx_hd_encode_24bit(framing_params, &encoded_ptr_index,
++                                                read_buffer32 + offset, encoded_ptr);
++    if (encoded != framing_params->pcm_bytes_per_read) {
++      a2dp_aptx_hd_encoder_cb.stats.media_read_total_dropped_packets++;
++      osi_free(p_buf);
++      return;
++    }
++    pcm_bytes_encoded += encoded;
++  }
++
++  // Compute the number of encoded bytes
++  const int COMPRESSION_RATIO = 4;
++  size_t encoded_bytes = pcm_bytes_encoded / COMPRESSION_RATIO;
++  p_buf->len += encoded_bytes;
++  log::verbose("encoded {} PCM bytes to {}", pcm_bytes_encoded, encoded_bytes);
++
++  // Update the RTP timestamp
++  *((uint32_t*)(p_buf + 1)) = a2dp_aptx_hd_encoder_cb.timestamp;
++  const uint8_t BYTES_PER_FRAME = 3;
++  uint32_t rtp_timestamp =
++          (pcm_bytes_encoded / a2dp_aptx_hd_encoder_cb.feeding_params.channel_count) /
++          BYTES_PER_FRAME;
++
++  // Timestamp will wrap over to 0 if stream continues on long enough
++  // (>25H @ 48KHz). The parameters are promoted to 64bit to ensure that
++  // no unsigned overflow is triggered as ubsan is always enabled.
++  a2dp_aptx_hd_encoder_cb.timestamp =
++          ((uint64_t)a2dp_aptx_hd_encoder_cb.timestamp + rtp_timestamp) & UINT32_MAX;
++
++  if (p_buf->len > 0) {
++    a2dp_aptx_hd_encoder_cb.enqueue_callback(p_buf, 1, bytes_read);
++  } else {
++    a2dp_aptx_hd_encoder_cb.stats.media_read_total_dropped_packets++;
++    osi_free(p_buf);
++  }
+ }
+ 
+-const char* A2DP_VendorCodecIndexStrAptxHd(void) { return "AptxHd"; }
+-
+-bool A2DP_VendorInitCodecConfigAptxHd(AvdtpSepConfig* p_cfg) { return false; }
+-
+-A2dpCodecConfigAptxHd::A2dpCodecConfigAptxHd(btav_a2dp_codec_priority_t codec_priority)
+-    : A2dpCodecConfig(BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_HD, bluetooth::a2dp::CodecId::APTX_HD,
+-                      A2DP_VendorCodecIndexStrAptxHd(), codec_priority) {}
+-
+-A2dpCodecConfigAptxHd::~A2dpCodecConfigAptxHd() {}
++static size_t aptx_hd_encode_24bit(tAPTX_HD_FRAMING_PARAMS* framing_params, size_t* data_out_index,
++                                   uint32_t* data32_in, uint8_t* data_out) {
++  if (!codec_client) return 0;
++  const int input = framing_params->pcm_bytes_per_read;
++  const int output = codec_client->transcode(reinterpret_cast<uint8_t*>(data32_in), input,
++                                              data_out + *data_out_index, input / 4);
++  if (output != input / 4) {
++    log::error("Sandboxed aptX HD encoder returned {} bytes for {} PCM bytes", output, input);
++    return 0;
++  }
++  *data_out_index += output;
++  return input;
++}
+ 
+-bool A2dpCodecConfigAptxHd::init() { return false; }
++void A2dpCodecConfigAptxHd::debug_codec_dump(int fd) {
++  a2dp_aptx_hd_encoder_stats_t* stats = &a2dp_aptx_hd_encoder_cb.stats;
+ 
+-bool A2dpCodecConfigAptxHd::useRtpHeaderMarkerBit() const { return false; }
++  A2dpCodecConfig::debug_codec_dump(fd);
+ 
+-void A2dpCodecConfigAptxHd::debug_codec_dump(int fd) {}
++  dprintf(fd, "  Encoder interval (ms): %" PRIu64 "\n",
++          a2dp_vendor_aptx_hd_get_encoder_interval_ms());
++  dprintf(fd, "  Effective MTU: %d\n", a2dp_vendor_aptx_hd_get_effective_frame_size());
++  dprintf(fd, "  Packet counts (expected/dropped)                        : %zu / %zu\n",
++          stats->media_read_total_expected_packets, stats->media_read_total_dropped_packets);
+ 
+-tA2DP_STATUS A2dpCodecConfigAptxHd::setCodecConfig(const uint8_t* p_peer_codec_info,
+-                                                   bool is_capability,
+-                                                   uint8_t* p_result_codec_config) {
+-  return AVDTP_UNSUPPORTED_CONFIGURATION;
+-}
++  dprintf(fd, "  PCM read counts (expected/actual)                       : %zu / %zu\n",
++          stats->media_read_total_expected_reads_count, stats->media_read_total_actual_reads_count);
+ 
+-bool A2dpCodecConfigAptxHd::setPeerCodecCapabilities(const uint8_t* p_peer_codec_capabilities) {
+-  return false;
++  dprintf(fd, "  PCM read bytes (expected/actual)                        : %zu / %zu\n",
++          stats->media_read_total_expected_read_bytes, stats->media_read_total_actual_read_bytes);
+ }
+diff --git a/system/stack/a2dp/a2dp_vendor_aptx_linux.cc b/system/stack/a2dp/a2dp_vendor_aptx_linux.cc
+index c4b63ac..d0f073e 100644
+--- a/system/stack/a2dp/a2dp_vendor_aptx_linux.cc
++++ b/system/stack/a2dp/a2dp_vendor_aptx_linux.cc
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2023 The Android Open Source Project
++ * Copyright 2016 The Android Open Source Project
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -14,96 +14,403 @@
+  * limitations under the License.
+  */
+ 
+-// Stubbed non-standard codec
++#define LOG_TAG "bluetooth-a2dp"
+ 
+-#include <cstdint>
++#include "a2dp_vendor_aptx_encoder.h"
+ 
+-#include "a2dp_vendor_aptx.h"
++#if defined(TARGET_FLOSS)
++#include "audio_hal_interface/a2dp_encoding_host.h"
++#endif
+ 
+-bool A2DP_IsCodecValidAptx(const uint8_t* p_codec_info) { return false; }
++#include <bluetooth/log.h>
++#include <inttypes.h>
++#include <stdio.h>
++#include <string.h>
+ 
+-bool A2DP_VendorUsesRtpHeaderAptx(bool content_protection_enabled, const uint8_t* p_codec_info) {
+-  return false;
+-}
+-
+-const char* A2DP_VendorCodecNameAptx(const uint8_t* p_codec_info) { return "Aptx"; }
++#include <cstdint>
++#include <memory>
+ 
+-bool A2DP_VendorCodecTypeEqualsAptx(const uint8_t* p_codec_info_a, const uint8_t* p_codec_info_b) {
+-  return false;
++#include "a2dp_codec_api.h"
++#include "a2dp_vendor.h"
++#include "a2dp_vendor_aptx.h"
++#include "avdt_api.h"
++#include "common/time_util.h"
++#include "internal_include/bt_target.h"
++#include "mmc/codec_client/codec_client.h"
++#include "mmc/proto/mmc_config.pb.h"
++#include "osi/include/allocator.h"
++#include "stack/include/bt_hdr.h"
++
++using namespace bluetooth;
++
++//
++// Encoder for aptX Source Codec
++//
++
++// offset
++// no RTP header for aptX classic
++#define A2DP_APTX_OFFSET (AVDT_MEDIA_OFFSET - AVDT_MEDIA_HDR_SIZE)
++
++#define A2DP_APTX_MAX_PCM_BYTES_PER_READ 4096
++
++typedef struct {
++  uint64_t sleep_time_ns;
++  uint32_t pcm_reads;
++  uint32_t pcm_bytes_per_read;
++  uint32_t aptx_bytes;
++  uint32_t frame_size_counter;
++} tAPTX_FRAMING_PARAMS;
++
++typedef struct {
++  uint64_t session_start_us;
++
++  size_t media_read_total_expected_packets;
++  size_t media_read_total_expected_reads_count;
++  size_t media_read_total_expected_read_bytes;
++
++  size_t media_read_total_dropped_packets;
++  size_t media_read_total_actual_reads_count;
++  size_t media_read_total_actual_read_bytes;
++} a2dp_aptx_encoder_stats_t;
++
++typedef struct {
++  a2dp_source_read_callback_t read_callback;
++  a2dp_source_enqueue_callback_t enqueue_callback;
++
++  bool use_SCMS_T;
++  tA2DP_ENCODER_INIT_PEER_PARAMS peer_params;
++  uint32_t timestamp;  // Timestamp for the A2DP frames
++
++  tA2DP_FEEDING_PARAMS feeding_params;
++  tAPTX_FRAMING_PARAMS framing_params;
++  a2dp_aptx_encoder_stats_t stats;
++} tA2DP_APTX_ENCODER_CB;
++
++static tA2DP_APTX_ENCODER_CB a2dp_aptx_encoder_cb;
++static std::unique_ptr<mmc::CodecClient> codec_client;
++
++static void a2dp_vendor_aptx_encoder_update(A2dpCodecConfig* a2dp_codec_config,
++                                            bool* p_restart_input, bool* p_restart_output,
++                                            bool* p_config_updated);
++static void aptx_init_framing_params(tAPTX_FRAMING_PARAMS* framing_params);
++static void aptx_update_framing_params(tAPTX_FRAMING_PARAMS* framing_params);
++static size_t aptx_encode_16bit(tAPTX_FRAMING_PARAMS* framing_params, size_t* data_out_index,
++                                uint16_t* data16_in, uint8_t* data_out);
++
++/*******************************************************************************
++ *
++ * Function         A2DP_VendorLoadEncoderAptx
++ *
++ * Description      This function will try to load the aptx encoder library.
++ *
++ * Returns          LOAD_SUCCESS on success
++ *                  LOAD_ERROR_MISSING_CODEC on missing library
++ *                  LOAD_ERROR_VERSION_MISMATCH on symbol loading error
++ *
++ ******************************************************************************/
++tLOADING_CODEC_STATUS A2DP_VendorLoadEncoderAptx(void) {
++  // Nothing to do - the library is statically linked
++  return LOAD_SUCCESS;
+ }
+ 
+-bool A2DP_VendorCodecEqualsAptx(const uint8_t* p_codec_info_a, const uint8_t* p_codec_info_b) {
++bool A2DP_VendorCopyAptxApi(tAPTX_API& external_api) {
++  external_api = {};
+   return false;
+ }
+ 
+-int A2DP_VendorGetBitRateAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetTrackSampleRateAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetTrackBitsPerSampleAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetTrackChannelCountAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetSinkTrackChannelTypeAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetChannelModeCodeAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-int A2DP_VendorGetFrameSizeAptx(const uint8_t* p_codec_info) { return -1; }
+-
+-bool A2DP_VendorGetPacketTimestampAptx(const uint8_t* p_codec_info, const uint8_t* p_data,
+-                                       uint32_t* p_timestamp) {
+-  return false;
++void A2DP_VendorUnloadEncoderAptx(void) {
++  a2dp_vendor_aptx_encoder_cleanup();
+ }
+ 
+-bool A2DP_VendorBuildCodecHeaderAptx(const uint8_t* p_codec_info, BT_HDR* p_buf,
+-                                     uint16_t frames_per_packet) {
+-  return false;
++void a2dp_vendor_aptx_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
++                                   A2dpCodecConfig* a2dp_codec_config,
++                                   a2dp_source_read_callback_t read_callback,
++                                   a2dp_source_enqueue_callback_t enqueue_callback) {
++  a2dp_vendor_aptx_encoder_cleanup();
++
++  a2dp_aptx_encoder_cb.stats.session_start_us = bluetooth::common::time_get_os_boottime_us();
++
++  a2dp_aptx_encoder_cb.read_callback = read_callback;
++  a2dp_aptx_encoder_cb.enqueue_callback = enqueue_callback;
++  a2dp_aptx_encoder_cb.peer_params = *p_peer_params;
++  a2dp_aptx_encoder_cb.timestamp = 0;
++
++  /* aptX encoder config */
++  a2dp_aptx_encoder_cb.use_SCMS_T = false;
++
++  // NOTE: Ignore the restart_input / restart_output flags - this initization
++  // happens when the audio session is (re)started.
++  bool restart_input = false;
++  bool restart_output = false;
++  bool config_updated = false;
++  a2dp_vendor_aptx_encoder_update(a2dp_codec_config, &restart_input, &restart_output,
++                                  &config_updated);
++  mmc::ConfigParam config;
++  config.mutable_a2dp_aptx_encoder_param()->set_variant(mmc::AptxEncoderParam::kAptxClassic);
++  codec_client = std::make_unique<mmc::CodecClient>();
++  if (codec_client->init(config) != 16) {
++    log::error("Cannot initialize sandboxed aptX encoder");
++    a2dp_vendor_aptx_encoder_cleanup();
++    return;
++  }
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(
++          a2dp_aptx_encoder_cb.feeding_params.sample_rate,
++          a2dp_aptx_encoder_cb.feeding_params.bits_per_sample,
++          a2dp_aptx_encoder_cb.feeding_params.channel_count);
++#endif
+ }
+ 
+-std::string A2DP_VendorCodecInfoStringAptx(const uint8_t* p_codec_info) {
+-  return "Unsupported codec: Aptx";
++// Update the A2DP aptX encoder.
++// |a2dp_codec_config| is the A2DP codec to use for the update.
++static void a2dp_vendor_aptx_encoder_update(A2dpCodecConfig* a2dp_codec_config,
++                                            bool* p_restart_input, bool* p_restart_output,
++                                            bool* p_config_updated) {
++  uint8_t codec_info[AVDT_CODEC_SIZE];
++
++  *p_restart_input = false;
++  *p_restart_output = false;
++  *p_config_updated = false;
++  if (!a2dp_codec_config->copyOutOtaCodecConfig(codec_info)) {
++    log::error("Cannot update the codec encoder for {}: invalid codec config",
++               a2dp_codec_config->name());
++    return;
++  }
++  const uint8_t* p_codec_info = codec_info;
++
++  // The feeding parameters
++  tA2DP_FEEDING_PARAMS* p_feeding_params = &a2dp_aptx_encoder_cb.feeding_params;
++  p_feeding_params->sample_rate = A2DP_VendorGetTrackSampleRateAptx(p_codec_info);
++  p_feeding_params->bits_per_sample = a2dp_codec_config->getAudioBitsPerSample();
++  p_feeding_params->channel_count = A2DP_VendorGetTrackChannelCountAptx(p_codec_info);
++  log::info("sample_rate={} bits_per_sample={} channel_count={}", p_feeding_params->sample_rate,
++            p_feeding_params->bits_per_sample, p_feeding_params->channel_count);
++  a2dp_vendor_aptx_feeding_reset();
+ }
+ 
+-const tA2DP_ENCODER_INTERFACE* A2DP_VendorGetEncoderInterfaceAptx(const uint8_t* p_codec_info) {
+-  return nullptr;
++void a2dp_vendor_aptx_encoder_cleanup(void) {
++  codec_client.reset();
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
++  memset(&a2dp_aptx_encoder_cb, 0, sizeof(a2dp_aptx_encoder_cb));
+ }
+ 
+-const tA2DP_DECODER_INTERFACE* A2DP_VendorGetDecoderInterfaceAptx(const uint8_t* p_codec_info) {
+-  return nullptr;
++//
++// Initialize the framing parameters, and set those that don't change
++// while streaming (e.g., 'sleep_time_ns').
++//
++static void aptx_init_framing_params(tAPTX_FRAMING_PARAMS* framing_params) {
++  framing_params->sleep_time_ns = 0;
++  framing_params->pcm_reads = 0;
++  framing_params->pcm_bytes_per_read = 0;
++  framing_params->aptx_bytes = 0;
++  framing_params->frame_size_counter = 0;
++
++  if (a2dp_aptx_encoder_cb.feeding_params.sample_rate == 48000) {
++    if (a2dp_aptx_encoder_cb.use_SCMS_T) {
++      framing_params->sleep_time_ns = 13000000;
++    } else {
++      framing_params->sleep_time_ns = 14000000;
++    }
++  } else {
++    // Assume the sample rate is 44100
++    if (a2dp_aptx_encoder_cb.use_SCMS_T) {
++      framing_params->sleep_time_ns = 14000000;
++    } else {
++      framing_params->sleep_time_ns = 15000000;
++    }
++  }
++
++  log::info("sleep_time_ns={}", framing_params->sleep_time_ns);
+ }
+ 
+-bool A2DP_VendorAdjustCodecAptx(uint8_t* p_codec_info) { return false; }
++//
++// Set frame size and transmission interval needed to stream the required
++// sample rate using 2-DH5 packets for aptX and 2-DH3 packets for aptX-LL.
++// With SCMS-T enabled we need to reserve room for extra headers added later.
++// Packets are always sent at equals time intervals but to achieve the
++// required sample rate, the frame size needs to change on occasion.
++//
++// Also need to specify how many of the required PCM samples are read at a
++// time:
++//     aptx_bytes = pcm_reads * pcm_bytes_per_read / 4
++// and
++//     number of aptX samples produced = pcm_bytes_per_read / 16
++//
++static void aptx_update_framing_params(tAPTX_FRAMING_PARAMS* framing_params) {
++  if (a2dp_aptx_encoder_cb.feeding_params.sample_rate == 48000) {
++    if (a2dp_aptx_encoder_cb.use_SCMS_T) {
++      framing_params->aptx_bytes = 624;
++      framing_params->pcm_bytes_per_read = 208;
++      framing_params->pcm_reads = 12;
++    } else {
++      framing_params->aptx_bytes = 672;
++      framing_params->pcm_bytes_per_read = 224;
++      framing_params->pcm_reads = 12;
++    }
++  } else {
++    // Assume the sample rate is 44100
++    if (a2dp_aptx_encoder_cb.use_SCMS_T) {
++      if (++framing_params->frame_size_counter < 20) {
++        framing_params->aptx_bytes = 616;
++        framing_params->pcm_bytes_per_read = 224;
++        framing_params->pcm_reads = 11;
++      } else {
++        framing_params->aptx_bytes = 644;
++        framing_params->pcm_bytes_per_read = 368;
++        framing_params->pcm_reads = 7;
++        framing_params->frame_size_counter = 0;
++      }
++    } else {
++      if (++framing_params->frame_size_counter < 8) {
++        framing_params->aptx_bytes = 660;
++        framing_params->pcm_bytes_per_read = 240;
++        framing_params->pcm_reads = 11;
++      } else {
++        framing_params->aptx_bytes = 672;
++        framing_params->pcm_bytes_per_read = 224;
++        framing_params->pcm_reads = 12;
++        framing_params->frame_size_counter = 0;
++      }
++    }
++  }
++
++  log::verbose(
++          "sleep_time_ns={} aptx_bytes={} pcm_bytes_per_read={} pcm_reads={} "
++          "frame_size_counter={}",
++          framing_params->sleep_time_ns, framing_params->aptx_bytes,
++          framing_params->pcm_bytes_per_read, framing_params->pcm_reads,
++          framing_params->frame_size_counter);
++}
+ 
+-btav_a2dp_codec_index_t A2DP_VendorSourceCodecIndexAptx(const uint8_t* p_codec_info) {
+-  return BTAV_A2DP_CODEC_INDEX_MAX;
++void a2dp_vendor_aptx_feeding_reset(void) {
++  aptx_init_framing_params(&a2dp_aptx_encoder_cb.framing_params);
+ }
+ 
+-btav_a2dp_codec_index_t A2DP_VendorSinkCodecIndexAptx(const uint8_t* p_codec_info) {
+-  return BTAV_A2DP_CODEC_INDEX_MAX;
++void a2dp_vendor_aptx_feeding_flush(void) {
++  aptx_init_framing_params(&a2dp_aptx_encoder_cb.framing_params);
+ }
+ 
+-const char* A2DP_VendorCodecIndexStrAptx(void) { return "Aptx"; }
++uint64_t a2dp_vendor_aptx_get_encoder_interval_ms(void) {
++  return a2dp_aptx_encoder_cb.framing_params.sleep_time_ns / (1000 * 1000);
++}
+ 
+-bool A2DP_VendorInitCodecConfigAptx(AvdtpSepConfig* p_cfg) { return false; }
++int a2dp_vendor_aptx_get_effective_frame_size() {
++  return a2dp_aptx_encoder_cb.peer_params.peer_mtu;
++}
+ 
+-A2dpCodecConfigAptx::A2dpCodecConfigAptx(btav_a2dp_codec_priority_t codec_priority)
+-    : A2dpCodecConfig(BTAV_A2DP_CODEC_INDEX_SOURCE_APTX, bluetooth::a2dp::CodecId::APTX,
+-                      A2DP_VendorCodecIndexStrAptx(), codec_priority) {}
++void a2dp_vendor_aptx_send_frames(uint64_t /* timestamp_us */) {
++  tAPTX_FRAMING_PARAMS* framing_params = &a2dp_aptx_encoder_cb.framing_params;
++
++  // Prepare the packet to send
++  BT_HDR* p_buf = (BT_HDR*)osi_malloc(BT_DEFAULT_BUFFER_SIZE);
++  p_buf->offset = A2DP_APTX_OFFSET;
++  p_buf->len = 0;
++  p_buf->layer_specific = 0;
++
++  uint8_t* encoded_ptr = (uint8_t*)(p_buf + 1);
++  encoded_ptr += p_buf->offset;
++
++  aptx_update_framing_params(framing_params);
++
++  //
++  // Read the PCM data and encode it
++  //
++  uint16_t read_buffer16[A2DP_APTX_MAX_PCM_BYTES_PER_READ / sizeof(uint16_t)];
++  uint32_t expected_read_bytes = framing_params->pcm_reads * framing_params->pcm_bytes_per_read;
++  size_t encoded_ptr_index = 0;
++  size_t pcm_bytes_encoded = 0;
++  uint32_t bytes_read = 0;
++
++  a2dp_aptx_encoder_cb.stats.media_read_total_expected_packets++;
++  a2dp_aptx_encoder_cb.stats.media_read_total_expected_reads_count++;
++  a2dp_aptx_encoder_cb.stats.media_read_total_expected_read_bytes += expected_read_bytes;
++
++  log::verbose("PCM read of size {}", expected_read_bytes);
++  bytes_read = a2dp_aptx_encoder_cb.read_callback((uint8_t*)read_buffer16, expected_read_bytes);
++  a2dp_aptx_encoder_cb.stats.media_read_total_actual_read_bytes += bytes_read;
++  if (bytes_read < expected_read_bytes) {
++    log::warn("underflow at PCM reading: read {} bytes instead of {}", bytes_read,
++              expected_read_bytes);
++    a2dp_aptx_encoder_cb.stats.media_read_total_dropped_packets++;
++    osi_free(p_buf);
++    return;
++  }
++  a2dp_aptx_encoder_cb.stats.media_read_total_actual_reads_count++;
++
++  for (uint32_t reads = 0, offset = 0; reads < framing_params->pcm_reads;
++       reads++, offset += (framing_params->pcm_bytes_per_read / sizeof(uint16_t))) {
++    const size_t encoded = aptx_encode_16bit(framing_params, &encoded_ptr_index,
++                                             read_buffer16 + offset, encoded_ptr);
++    if (encoded != framing_params->pcm_bytes_per_read) {
++      a2dp_aptx_encoder_cb.stats.media_read_total_dropped_packets++;
++      osi_free(p_buf);
++      return;
++    }
++    pcm_bytes_encoded += encoded;
++  }
++
++  // Compute the number of encoded bytes
++  const int COMPRESSION_RATIO = 4;
++  size_t encoded_bytes = pcm_bytes_encoded / COMPRESSION_RATIO;
++  p_buf->len += encoded_bytes;
++  log::verbose("encoded {} PCM bytes to {}", pcm_bytes_encoded, encoded_bytes);
++
++  // Update the RTP timestamp
++  *((uint32_t*)(p_buf + 1)) = a2dp_aptx_encoder_cb.timestamp;
++
++  const uint8_t BYTES_PER_FRAME = 2;
++  uint32_t rtp_timestamp =
++          (pcm_bytes_encoded / a2dp_aptx_encoder_cb.feeding_params.channel_count) / BYTES_PER_FRAME;
++
++  // Timestamp will wrap over to 0 if stream continues on long enough
++  // (>25H @ 48KHz). The parameters are promoted to 64bit to ensure that
++  // no unsigned overflow is triggered as ubsan is always enabled.
++  a2dp_aptx_encoder_cb.timestamp =
++          ((uint64_t)a2dp_aptx_encoder_cb.timestamp + rtp_timestamp) & UINT32_MAX;
++
++  if (p_buf->len > 0) {
++    a2dp_aptx_encoder_cb.enqueue_callback(p_buf, 1, bytes_read);
++  } else {
++    a2dp_aptx_encoder_cb.stats.media_read_total_dropped_packets++;
++    osi_free(p_buf);
++  }
++}
+ 
+-A2dpCodecConfigAptx::~A2dpCodecConfigAptx() {}
++static size_t aptx_encode_16bit(tAPTX_FRAMING_PARAMS* framing_params, size_t* data_out_index,
++                                uint16_t* data16_in, uint8_t* data_out) {
++  if (!codec_client) return 0;
++  const int input = framing_params->pcm_bytes_per_read;
++  const int output = codec_client->transcode(reinterpret_cast<uint8_t*>(data16_in), input,
++                                              data_out + *data_out_index, input / 4);
++  if (output != input / 4) {
++    log::error("Sandboxed aptX encoder returned {} bytes for {} PCM bytes", output, input);
++    return 0;
++  }
++  *data_out_index += output;
++  return input;
++}
+ 
+-bool A2dpCodecConfigAptx::init() { return false; }
++void A2dpCodecConfigAptx::debug_codec_dump(int fd) {
++  a2dp_aptx_encoder_stats_t* stats = &a2dp_aptx_encoder_cb.stats;
+ 
+-bool A2dpCodecConfigAptx::useRtpHeaderMarkerBit() const { return false; }
++  A2dpCodecConfig::debug_codec_dump(fd);
+ 
+-void A2dpCodecConfigAptx::debug_codec_dump(int fd) {}
++  dprintf(fd, "  Encoder interval (ms): %" PRIu64 "\n", a2dp_vendor_aptx_get_encoder_interval_ms());
++  dprintf(fd, "  Effective MTU: %d\n", a2dp_vendor_aptx_get_effective_frame_size());
++  dprintf(fd,
++          "  Packet counts (expected/dropped)                        : %zu / "
++          "%zu\n",
++          stats->media_read_total_expected_packets, stats->media_read_total_dropped_packets);
+ 
+-tA2DP_STATUS A2dpCodecConfigAptx::setCodecConfig(const uint8_t* p_peer_codec_info,
+-                                                 bool is_capability,
+-                                                 uint8_t* p_result_codec_config) {
+-  return AVDTP_UNSUPPORTED_CONFIGURATION;
+-}
++  dprintf(fd,
++          "  PCM read counts (expected/actual)                       : %zu / "
++          "%zu\n",
++          stats->media_read_total_expected_reads_count, stats->media_read_total_actual_reads_count);
+ 
+-bool A2dpCodecConfigAptx::setPeerCodecCapabilities(const uint8_t* p_peer_codec_capabilities) {
+-  return false;
++  dprintf(fd,
++          "  PCM read bytes (expected/actual)                        : %zu / "
++          "%zu\n",
++          stats->media_read_total_expected_read_bytes, stats->media_read_total_actual_read_bytes);
+ }
+diff --git a/system/stack/a2dp/a2dp_vendor_ldac_linux.cc b/system/stack/a2dp/a2dp_vendor_ldac_linux.cc
+index 2401619..064efb4 100644
+--- a/system/stack/a2dp/a2dp_vendor_ldac_linux.cc
++++ b/system/stack/a2dp/a2dp_vendor_ldac_linux.cc
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2023 The Android Open Source Project
++ * Copyright 2016 The Android Open Source Project
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -14,89 +14,523 @@
+  * limitations under the License.
+  */
+ 
+-// Stubbed non-standard codec.
++#define LOG_TAG "bluetooth-a2dp"
++#define ATRACE_TAG ATRACE_TAG_AUDIO
++
++#include "a2dp_vendor_ldac_encoder.h"
++
++#if defined(TARGET_FLOSS)
++#include "audio_hal_interface/a2dp_encoding_host.h"
++#endif
++
++#include <stdio.h>
++
++#include <cstdint>
++#include <memory>
++#include <string>
++
++#include "a2dp_codec_api.h"
++#include "a2dp_vendor_ldac_constants.h"
++#include "avdt_api.h"
++#include "hardware/bt_av.h"
++#ifdef __ANDROID__
++#include <cutils/trace.h>
++#endif
++#include <bluetooth/log.h>
++#include <inttypes.h>
++#include <string.h>
+ 
+ #include "a2dp_vendor_ldac.h"
++#include "common/time_util.h"
++#include "internal_include/bt_target.h"
++#include "mmc/codec_client/codec_client.h"
++#include "mmc/proto/mmc_config.pb.h"
++#include "osi/include/allocator.h"
++#include "osi/include/properties.h"
++#include "stack/include/bt_hdr.h"
+ 
+-bool A2DP_IsCodecValidLdac(const uint8_t* p_codec_info) { return false; }
++//
++// Encoder for LDAC Source Codec
++//
+ 
+-bool A2DP_VendorUsesRtpHeaderLdac(bool content_protection_enabled,
+-                                  const uint8_t* p_codec_info) {
+-  return false;
+-}
++// A2DP LDAC encoder interval in milliseconds
++#define A2DP_LDAC_ENCODER_INTERVAL_MS 20
++#define A2DP_LDAC_MEDIA_BYTES_PER_FRAME 128
++
++// offset
++#define A2DP_LDAC_OFFSET (AVDT_MEDIA_OFFSET + A2DP_LDAC_MPL_HDR_LEN)
++
++using namespace bluetooth;
++
++constexpr int kLdacPcmS16 = 2;
++constexpr int kLdacPcmS24 = 3;
++constexpr int kLdacPcmS32 = 4;
++constexpr int kLdacEncodeSamples = 128;
++
++typedef struct {
++  uint32_t sample_rate;
++  uint8_t channel_mode;
++  uint8_t bits_per_sample;
++  int quality_mode_index;
++  int pcm_wlength;
++  int pcm_fmt;
++} tA2DP_LDAC_ENCODER_PARAMS;
++
++typedef struct {
++  float counter;
++  uint32_t bytes_per_tick; /* pcm bytes read each media task tick */
++  uint64_t last_frame_us;
++} tA2DP_LDAC_FEEDING_STATE;
++
++typedef struct {
++  uint64_t session_start_us;
++
++  size_t media_read_total_expected_packets;
++  size_t media_read_total_expected_reads_count;
++  size_t media_read_total_expected_read_bytes;
++
++  size_t media_read_total_dropped_packets;
++  size_t media_read_total_actual_reads_count;
++  size_t media_read_total_actual_read_bytes;
++} a2dp_ldac_encoder_stats_t;
++
++typedef struct {
++  a2dp_source_read_callback_t read_callback;
++  a2dp_source_enqueue_callback_t enqueue_callback;
++  uint16_t TxAaMtuSize;
++  size_t TxQueueLength;
+ 
+-const char* A2DP_VendorCodecNameLdac(const uint8_t* p_codec_info) {
+-  return "Ldac";
++  bool use_SCMS_T;
++  tA2DP_ENCODER_INIT_PEER_PARAMS peer_params;
++  uint32_t timestamp;  // Timestamp for the A2DP frames
++
++  tA2DP_FEEDING_PARAMS feeding_params;
++  tA2DP_LDAC_ENCODER_PARAMS ldac_encoder_params;
++  tA2DP_LDAC_FEEDING_STATE ldac_feeding_state;
++
++  a2dp_ldac_encoder_stats_t stats;
++} tA2DP_LDAC_ENCODER_CB;
++
++static tA2DP_LDAC_ENCODER_CB a2dp_ldac_encoder_cb;
++static std::unique_ptr<mmc::CodecClient> codec_client;
++
++static void a2dp_vendor_ldac_encoder_update(A2dpCodecConfig* a2dp_codec_config,
++                                            bool* p_restart_input, bool* p_restart_output,
++                                            bool* p_config_updated);
++static void a2dp_ldac_get_num_frame_iteration(uint8_t* num_of_iterations, uint8_t* num_of_frames,
++                                              uint64_t timestamp_us);
++static void a2dp_ldac_encode_frames(uint8_t nb_frame);
++static bool a2dp_ldac_read_feeding(uint8_t* read_buffer, uint32_t* bytes_read);
++static uint16_t adjust_effective_mtu(const tA2DP_ENCODER_INIT_PEER_PARAMS& peer_params);
++static std::string quality_mode_index_to_name(int quality_mode_index);
++
++bool A2DP_VendorLoadEncoderLdac(void) {
++  // Nothing to do - the library is statically linked
++  return true;
+ }
+ 
+-bool A2DP_VendorCodecTypeEqualsLdac(const uint8_t* p_codec_info_a,
+-                                    const uint8_t* p_codec_info_b) {
+-  return false;
++void A2DP_VendorUnloadEncoderLdac(void) {
++  // Cleanup any LDAC-related state
++  a2dp_vendor_ldac_encoder_cleanup();
+ }
+ 
+-bool A2DP_VendorCodecEqualsLdac(const uint8_t* p_codec_info_a,
+-                                const uint8_t* p_codec_info_b) {
+-  return false;
++void a2dp_vendor_ldac_encoder_init(const tA2DP_ENCODER_INIT_PEER_PARAMS* p_peer_params,
++                                   A2dpCodecConfig* a2dp_codec_config,
++                                   a2dp_source_read_callback_t read_callback,
++                                   a2dp_source_enqueue_callback_t enqueue_callback) {
++  a2dp_vendor_ldac_encoder_cleanup();
++
++  a2dp_ldac_encoder_cb.stats.session_start_us = bluetooth::common::time_get_os_boottime_us();
++
++  a2dp_ldac_encoder_cb.read_callback = read_callback;
++  a2dp_ldac_encoder_cb.enqueue_callback = enqueue_callback;
++  a2dp_ldac_encoder_cb.peer_params = *p_peer_params;
++  a2dp_ldac_encoder_cb.timestamp = 0;
++  a2dp_ldac_encoder_cb.use_SCMS_T = false;
++
++  // NOTE: Ignore the restart_input / restart_output flags - this initization
++  // happens when the audio session is (re)started.
++  bool restart_input = false;
++  bool restart_output = false;
++  bool config_updated = false;
++  a2dp_vendor_ldac_encoder_update(a2dp_codec_config, &restart_input, &restart_output,
++                                  &config_updated);
+ }
+ 
+-int A2DP_VendorGetBitRateLdac(const uint8_t* p_codec_info) { return -1; }
++// Update the A2DP LDAC encoder.
++// |a2dp_codec_config| is the A2DP codec to use for the update.
++static void a2dp_vendor_ldac_encoder_update(A2dpCodecConfig* a2dp_codec_config,
++                                            bool* p_restart_input, bool* p_restart_output,
++                                            bool* p_config_updated) {
++  tA2DP_LDAC_ENCODER_PARAMS* p_encoder_params = &a2dp_ldac_encoder_cb.ldac_encoder_params;
++  uint8_t codec_info[AVDT_CODEC_SIZE];
+ 
+-int A2DP_VendorGetTrackSampleRateLdac(const uint8_t* p_codec_info) { return -1; }
++  *p_restart_input = false;
++  *p_restart_output = false;
++  *p_config_updated = false;
+ 
+-int A2DP_VendorGetTrackBitsPerSampleLdac(const uint8_t* p_codec_info) { return -1; }
++  if (!a2dp_codec_config->copyOutOtaCodecConfig(codec_info)) {
++    log::error("Cannot update the codec encoder for {}: invalid codec config",
++               a2dp_codec_config->name());
++    return;
++  }
++  const uint8_t* p_codec_info = codec_info;
++  btav_a2dp_codec_config_t codec_config = a2dp_codec_config->getCodecConfig();
+ 
+-int A2DP_VendorGetTrackChannelCountLdac(const uint8_t* p_codec_info) { return -1; }
++  // The feeding parameters
++  tA2DP_FEEDING_PARAMS* p_feeding_params = &a2dp_ldac_encoder_cb.feeding_params;
++  p_feeding_params->sample_rate = A2DP_VendorGetTrackSampleRateLdac(p_codec_info);
++  p_feeding_params->bits_per_sample = a2dp_codec_config->getAudioBitsPerSample();
++  p_feeding_params->channel_count = A2DP_VendorGetTrackChannelCountLdac(p_codec_info);
++  log::info("sample_rate={} bits_per_sample={} channel_count={}", p_feeding_params->sample_rate,
++            p_feeding_params->bits_per_sample, p_feeding_params->channel_count);
++  a2dp_vendor_ldac_feeding_reset();
+ 
+-int A2DP_VendorGetChannelModeCodeLdac(const uint8_t* p_codec_info) { return -1; }
++  // The codec parameters
++  p_encoder_params->sample_rate = a2dp_ldac_encoder_cb.feeding_params.sample_rate;
++  p_encoder_params->channel_mode = A2DP_VendorGetChannelModeCodeLdac(p_codec_info);
+ 
+-int A2DP_VendorGetFrameSizeLdac(const uint8_t* p_codec_info) { return -1; }
++  // Set the quality mode index
++  int old_quality_mode_index = p_encoder_params->quality_mode_index;
++  if (codec_config.codec_specific_1 != 0) {
++    p_encoder_params->quality_mode_index = codec_config.codec_specific_1 % 10;
++    log::info("setting quality mode to {}",
++              quality_mode_index_to_name(p_encoder_params->quality_mode_index));
++  } else {
++    p_encoder_params->quality_mode_index = osi_property_get_int32(
++            "persist.bluetooth.a2dp_ldac.default_quality_mode", A2DP_LDAC_QUALITY_ABR);
++    log::info("setting quality mode to default {}",
++              quality_mode_index_to_name(p_encoder_params->quality_mode_index));
++  }
+ 
+-bool A2DP_VendorGetPacketTimestampLdac(const uint8_t* p_codec_info, const uint8_t* p_data,
+-                                       uint32_t* p_timestamp) {
+-  return false;
++  // The MMC protocol does not carry live queue depth, so ABR requests use the
++  // standard-quality mode until queue feedback is added to that boundary.
++  if (p_encoder_params->quality_mode_index < A2DP_LDAC_QUALITY_HIGH ||
++      p_encoder_params->quality_mode_index > A2DP_LDAC_QUALITY_LOW) {
++    p_encoder_params->quality_mode_index = A2DP_LDAC_QUALITY_MID;
++  }
++
++  if (p_encoder_params->quality_mode_index != old_quality_mode_index) {
++    *p_config_updated = true;
++  }
++
++  p_encoder_params->pcm_wlength = a2dp_ldac_encoder_cb.feeding_params.bits_per_sample >> 3;
++  // Set the Audio format from pcm_wlength
++  p_encoder_params->pcm_fmt = kLdacPcmS16;
++  if (p_encoder_params->pcm_wlength == 2) {
++    p_encoder_params->pcm_fmt = kLdacPcmS16;
++  } else if (p_encoder_params->pcm_wlength == 3) {
++    p_encoder_params->pcm_fmt = kLdacPcmS24;
++  } else if (p_encoder_params->pcm_wlength == 4) {
++    p_encoder_params->pcm_fmt = kLdacPcmS32;
++  }
++
++  const tA2DP_ENCODER_INIT_PEER_PARAMS& peer_params = a2dp_ldac_encoder_cb.peer_params;
++  a2dp_ldac_encoder_cb.TxAaMtuSize = adjust_effective_mtu(peer_params);
++  log::info("MTU={}, peer_mtu={}", a2dp_ldac_encoder_cb.TxAaMtuSize, peer_params.peer_mtu);
++  log::info(
++          "sample_rate: {} channel_mode: {} quality_mode_index: {} pcm_wlength: {} "
++          "pcm_fmt: {}",
++          p_encoder_params->sample_rate, p_encoder_params->channel_mode,
++          p_encoder_params->quality_mode_index, p_encoder_params->pcm_wlength,
++          p_encoder_params->pcm_fmt);
++
++  mmc::ConfigParam config;
++  auto* param = config.mutable_a2dp_ldac_encoder_param();
++  param->set_sample_rate(p_encoder_params->sample_rate);
++  param->set_channel_mode(p_encoder_params->channel_mode);
++  param->set_pcm_format(p_encoder_params->pcm_fmt);
++  param->set_quality_mode(p_encoder_params->quality_mode_index);
++  param->set_effective_frame_size(a2dp_ldac_encoder_cb.TxAaMtuSize);
++  codec_client = std::make_unique<mmc::CodecClient>();
++  const int expected = kLdacEncodeSamples * p_feeding_params->channel_count *
++                       p_encoder_params->pcm_wlength;
++  if (codec_client->init(config) != expected) {
++    log::error("Cannot initialize sandboxed LDAC encoder");
++    codec_client.reset();
++    return;
++  }
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(p_feeding_params->sample_rate,
++                                          p_feeding_params->bits_per_sample,
++                                          p_feeding_params->channel_count);
++#endif
+ }
+ 
+-bool A2DP_VendorBuildCodecHeaderLdac(const uint8_t* p_codec_info, BT_HDR* p_buf,
+-                                     uint16_t frames_per_packet) {
+-  return false;
++void a2dp_vendor_ldac_encoder_cleanup(void) {
++  codec_client.reset();
++#if defined(TARGET_FLOSS)
++  bluetooth::audio::a2dp::UpdatePcmConfig(0, 0, 0);
++#endif
++  memset(&a2dp_ldac_encoder_cb, 0, sizeof(a2dp_ldac_encoder_cb));
+ }
+ 
+-std::string A2DP_VendorCodecInfoStringLdac(const uint8_t* p_codec_info) {
+-  return "Unsupported codec: Ldac";
++void a2dp_vendor_ldac_feeding_reset(void) {
++  /* By default, just clear the entire state */
++  memset(&a2dp_ldac_encoder_cb.ldac_feeding_state, 0,
++         sizeof(a2dp_ldac_encoder_cb.ldac_feeding_state));
++
++  a2dp_ldac_encoder_cb.ldac_feeding_state.bytes_per_tick =
++          (a2dp_ldac_encoder_cb.feeding_params.sample_rate *
++           a2dp_ldac_encoder_cb.feeding_params.bits_per_sample / 8 *
++           a2dp_ldac_encoder_cb.feeding_params.channel_count * A2DP_LDAC_ENCODER_INTERVAL_MS) /
++          1000;
++
++  log::info("PCM bytes per tick {}", a2dp_ldac_encoder_cb.ldac_feeding_state.bytes_per_tick);
+ }
+ 
+-const tA2DP_ENCODER_INTERFACE* A2DP_VendorGetEncoderInterfaceLdac(const uint8_t* p_codec_info) {
+-  return nullptr;
++void a2dp_vendor_ldac_feeding_flush(void) {
++  a2dp_ldac_encoder_cb.ldac_feeding_state.counter = 0.0f;
+ }
+ 
+-bool A2DP_VendorAdjustCodecLdac(uint8_t* p_codec_info) { return false; }
++uint64_t a2dp_vendor_ldac_get_encoder_interval_ms(void) { return A2DP_LDAC_ENCODER_INTERVAL_MS; }
++
++int a2dp_vendor_ldac_get_effective_frame_size() { return a2dp_ldac_encoder_cb.TxAaMtuSize; }
+ 
+-btav_a2dp_codec_index_t A2DP_VendorSourceCodecIndexLdac(const uint8_t* p_codec_info) {
+-  return BTAV_A2DP_CODEC_INDEX_MAX;
++void a2dp_vendor_ldac_send_frames(uint64_t timestamp_us) {
++  uint8_t nb_frame = 0;
++  uint8_t nb_iterations = 0;
++
++  a2dp_ldac_get_num_frame_iteration(&nb_iterations, &nb_frame, timestamp_us);
++  log::verbose("Sending {} frames per iteration, {} iterations", nb_frame, nb_iterations);
++  if (nb_frame == 0) {
++    return;
++  }
++
++  for (uint8_t counter = 0; counter < nb_iterations; counter++) {
++    // Transcode frame and enqueue
++    a2dp_ldac_encode_frames(nb_frame);
++  }
+ }
+ 
+-const char* A2DP_VendorCodecIndexStrLdac(void) { return "Ldac"; }
++// Obtains the number of frames to send and number of iterations
++// to be used. |num_of_iterations| and |num_of_frames| parameters
++// are used as output param for returning the respective values.
++static void a2dp_ldac_get_num_frame_iteration(uint8_t* num_of_iterations, uint8_t* num_of_frames,
++                                              uint64_t timestamp_us) {
++  uint32_t result = 0;
++  uint8_t nof = 0;
++  uint8_t noi = 1;
++
++  uint32_t pcm_bytes_per_frame = A2DP_LDAC_MEDIA_BYTES_PER_FRAME *
++                                 a2dp_ldac_encoder_cb.feeding_params.channel_count *
++                                 a2dp_ldac_encoder_cb.feeding_params.bits_per_sample / 8;
++  log::verbose("pcm_bytes_per_frame {}", pcm_bytes_per_frame);
++
++  uint32_t us_this_tick = A2DP_LDAC_ENCODER_INTERVAL_MS * 1000;
++  uint64_t now_us = timestamp_us;
++  if (a2dp_ldac_encoder_cb.ldac_feeding_state.last_frame_us != 0) {
++    us_this_tick = (now_us - a2dp_ldac_encoder_cb.ldac_feeding_state.last_frame_us);
++  }
++  a2dp_ldac_encoder_cb.ldac_feeding_state.last_frame_us = now_us;
+ 
+-bool A2DP_VendorInitCodecConfigLdac(AvdtpSepConfig* p_cfg) { return false; }
++  a2dp_ldac_encoder_cb.ldac_feeding_state.counter +=
++          (float)a2dp_ldac_encoder_cb.ldac_feeding_state.bytes_per_tick * us_this_tick /
++          (A2DP_LDAC_ENCODER_INTERVAL_MS * 1000);
++
++  result = a2dp_ldac_encoder_cb.ldac_feeding_state.counter / pcm_bytes_per_frame;
++  a2dp_ldac_encoder_cb.ldac_feeding_state.counter -= result * pcm_bytes_per_frame;
++  nof = result;
++
++  log::verbose("effective num of frames {}, iterations {}", nof, noi);
++
++  *num_of_frames = nof;
++  *num_of_iterations = noi;
++}
+ 
+-A2dpCodecConfigLdacSource::A2dpCodecConfigLdacSource(btav_a2dp_codec_priority_t codec_priority)
+-    : A2dpCodecConfigLdacBase(BTAV_A2DP_CODEC_INDEX_SOURCE_LDAC, A2DP_VendorCodecIndexStrLdac(),
+-                              codec_priority, true) {}
++static void a2dp_ldac_encode_frames(uint8_t nb_frame) {
++  tA2DP_LDAC_ENCODER_PARAMS* p_encoder_params = &a2dp_ldac_encoder_cb.ldac_encoder_params;
++  uint8_t remain_nb_frame = nb_frame;
++  uint16_t ldac_frame_size;
++  uint8_t read_buffer[kLdacEncodeSamples * 4 /* byte/sample */ * 2 /* ch */];
+ 
+-A2dpCodecConfigLdacSource::~A2dpCodecConfigLdacSource() {}
++  switch (p_encoder_params->sample_rate) {
++    case 176400:
++    case 192000:
++      ldac_frame_size = 512;  // sample/ch
++      break;
++    case 88200:
++    case 96000:
++      ldac_frame_size = 256;  // sample/ch
++      break;
++    case 44100:
++    case 48000:
++    default:
++      ldac_frame_size = 128;  // sample/ch
++      break;
++  }
+ 
+-bool A2dpCodecConfigLdacSource::init() { return false; }
++  uint32_t count;
++  int32_t out_frames = 0;
++  int written = 0;
+ 
+-bool A2dpCodecConfigLdacSource::useRtpHeaderMarkerBit() const { return false; }
++  uint32_t bytes_read = 0;
++  while (nb_frame) {
++    BT_HDR* p_buf = (BT_HDR*)osi_malloc(BT_DEFAULT_BUFFER_SIZE);
++    p_buf->offset = A2DP_LDAC_OFFSET;
++    p_buf->len = 0;
++    p_buf->layer_specific = 0;
++    a2dp_ldac_encoder_cb.stats.media_read_total_expected_packets++;
+ 
+-void A2dpCodecConfigLdacSource::debug_codec_dump(int fd) {}
++    count = 0;
++    do {
++      //
++      // Read the PCM data and encode it
++      //
++      uint32_t temp_bytes_read = 0;
++      if (a2dp_ldac_read_feeding(read_buffer, &temp_bytes_read)) {
++        bytes_read += temp_bytes_read;
++        uint8_t* packet = (uint8_t*)(p_buf + 1) + p_buf->offset + p_buf->len;
++        if (!codec_client) {
++          log::error("invalid sandboxed LDAC encoder client");
++          a2dp_ldac_encoder_cb.stats.media_read_total_dropped_packets++;
++          osi_free(p_buf);
++          return;
++        }
++        const size_t used = sizeof(BT_HDR) + p_buf->offset + p_buf->len;
++        if (used >= BT_DEFAULT_BUFFER_SIZE) {
++          log::error("No output space remains for sandboxed LDAC encoder");
++          a2dp_ldac_encoder_cb.stats.media_read_total_dropped_packets++;
++          osi_free(p_buf);
++          return;
++        }
++        int result = codec_client->transcode(read_buffer, temp_bytes_read, packet + count,
++                                             static_cast<int>(BT_DEFAULT_BUFFER_SIZE - used));
++        if (result < 1) {
++          log::error("Sandboxed LDAC encoding failed: {}", result);
++          a2dp_ldac_encoder_cb.stats.media_read_total_dropped_packets++;
++          osi_free(p_buf);
++          return;
++        }
++        out_frames = packet[count];
++        written = result - 1;
++        if (written > 0) memmove(packet + count, packet + count + 1, written);
++        count += written;
++        p_buf->len += written;
++        nb_frame--;
++        p_buf->layer_specific += out_frames;  // added a frame to the buffer
++      } else {
++        log::warn("underflow {}", nb_frame);
++        a2dp_ldac_encoder_cb.ldac_feeding_state.counter +=
++                nb_frame * kLdacEncodeSamples *
++                a2dp_ldac_encoder_cb.feeding_params.channel_count *
++                a2dp_ldac_encoder_cb.feeding_params.bits_per_sample / 8;
+ 
+-tA2DP_STATUS A2dpCodecConfigLdacBase::setCodecConfig(const uint8_t* p_peer_codec_info,
+-                                                     bool is_capability,
+-                                                     uint8_t* p_result_codec_config) {
+-  return AVDTP_UNSUPPORTED_CONFIGURATION;
++        // no more pcm to read
++        nb_frame = 0;
++      }
++    } while ((written == 0) && nb_frame);
++
++    if (p_buf->len) {
++      /*
++       * Timestamp of the media packet header represent the TS of the
++       * first frame, i.e the timestamp before including this frame.
++       */
++      *((uint32_t*)(p_buf + 1)) = a2dp_ldac_encoder_cb.timestamp;
++
++      // Timestamp will wrap over to 0 if stream continues on long enough
++      // (>25H @ 48KHz). The parameters are promoted to 64bit to ensure that
++      // no unsigned overflow is triggered as ubsan is always enabled.
++      a2dp_ldac_encoder_cb.timestamp = ((uint64_t)a2dp_ldac_encoder_cb.timestamp +
++                                        (p_buf->layer_specific * ldac_frame_size)) &
++                                       UINT32_MAX;
++
++      uint8_t done_nb_frame = remain_nb_frame - nb_frame;
++      remain_nb_frame = nb_frame;
++      if (!a2dp_ldac_encoder_cb.enqueue_callback(p_buf, done_nb_frame, bytes_read)) {
++        return;
++      }
++    } else {
++      // NOTE: Unlike the execution path for other codecs, it is normal for
++      // LDAC to NOT write encoded data to the last buffer if there wasn't
++      // enough data to write to. That data is accumulated internally by
++      // the codec and included in the next iteration. Therefore, here we
++      // don't increment the "media_read_total_dropped_packets" counter.
++      osi_free(p_buf);
++    }
++  }
+ }
+ 
+-bool A2dpCodecConfigLdacBase::setPeerCodecCapabilities(const uint8_t* p_peer_codec_capabilities) {
+-  return false;
++static bool a2dp_ldac_read_feeding(uint8_t* read_buffer, uint32_t* bytes_read) {
++  uint32_t read_size = kLdacEncodeSamples *
++                       a2dp_ldac_encoder_cb.feeding_params.channel_count *
++                       a2dp_ldac_encoder_cb.feeding_params.bits_per_sample / 8;
++
++  a2dp_ldac_encoder_cb.stats.media_read_total_expected_reads_count++;
++  a2dp_ldac_encoder_cb.stats.media_read_total_expected_read_bytes += read_size;
++
++  /* Read Data from UIPC channel */
++  uint32_t nb_byte_read = a2dp_ldac_encoder_cb.read_callback(read_buffer, read_size);
++  a2dp_ldac_encoder_cb.stats.media_read_total_actual_read_bytes += nb_byte_read;
++
++  if (nb_byte_read < read_size) {
++    if (nb_byte_read == 0) {
++      return false;
++    }
++
++    /* Fill the unfilled part of the read buffer with silence (0) */
++    memset(((uint8_t*)read_buffer) + nb_byte_read, 0, read_size - nb_byte_read);
++    nb_byte_read = read_size;
++  }
++  a2dp_ldac_encoder_cb.stats.media_read_total_actual_reads_count++;
++
++  *bytes_read = nb_byte_read;
++  return true;
++}
++
++static uint16_t adjust_effective_mtu(const tA2DP_ENCODER_INIT_PEER_PARAMS& peer_params) {
++  uint16_t mtu_size = BT_DEFAULT_BUFFER_SIZE - A2DP_LDAC_OFFSET - sizeof(BT_HDR);
++  if (mtu_size > peer_params.peer_mtu) {
++    mtu_size = peer_params.peer_mtu;
++  }
++  log::verbose("original AVDTP MTU size: {}", mtu_size);
++  return mtu_size;
++}
++
++static std::string quality_mode_index_to_name(int quality_mode_index) {
++  switch (quality_mode_index) {
++    case A2DP_LDAC_QUALITY_HIGH:
++      return "HIGH";
++    case A2DP_LDAC_QUALITY_MID:
++      return "MID";
++    case A2DP_LDAC_QUALITY_LOW:
++      return "LOW";
++    case A2DP_LDAC_QUALITY_ABR:
++      return "ABR";
++    default:
++      return "Unknown";
++  }
++}
++
++void a2dp_vendor_ldac_set_transmit_queue_length(size_t transmit_queue_length) {
++  a2dp_ldac_encoder_cb.TxQueueLength = transmit_queue_length;
++}
++
++void A2dpCodecConfigLdacSource::debug_codec_dump(int fd) {
++  a2dp_ldac_encoder_stats_t* stats = &a2dp_ldac_encoder_cb.stats;
++  tA2DP_LDAC_ENCODER_PARAMS* p_encoder_params = &a2dp_ldac_encoder_cb.ldac_encoder_params;
++
++  A2dpCodecConfig::debug_codec_dump(fd);
++
++  dprintf(fd, "  LDAC quality mode                                       : %s\n",
++          quality_mode_index_to_name(p_encoder_params->quality_mode_index).c_str());
++
++  dprintf(fd, "  LDAC saved transmit queue length                        : %zu\n",
++          a2dp_ldac_encoder_cb.TxQueueLength);
++  dprintf(fd, "  Encoder interval (ms): %" PRIu64 "\n", a2dp_vendor_ldac_get_encoder_interval_ms());
++  dprintf(fd, "  Effective MTU: %d\n", a2dp_vendor_ldac_get_effective_frame_size());
++  dprintf(fd,
++          "  Packet counts (expected/dropped)                        : %zu / "
++          "%zu\n",
++          stats->media_read_total_expected_packets, stats->media_read_total_dropped_packets);
++
++  dprintf(fd,
++          "  PCM read counts (expected/actual)                       : %zu / "
++          "%zu\n",
++          stats->media_read_total_expected_reads_count, stats->media_read_total_actual_reads_count);
++
++  dprintf(fd,
++          "  PCM read bytes (expected/actual)                        : %zu / "
++          "%zu\n",
++          stats->media_read_total_expected_read_bytes, stats->media_read_total_actual_read_bytes);
+ }
 diff --git a/system/stack/btm/btm_sco.cc b/system/stack/btm/btm_sco.cc
-index c48b321448..0dc59129a2 100644
+index c48b321..0dc5912 100644
 --- a/system/stack/btm/btm_sco.cc
 +++ b/system/stack/btm/btm_sco.cc
 @@ -1048,7 +1048,18 @@ void btm_sco_connected(const RawAddress& bda, uint16_t hci_handle, tBTM_ESCO_DAT
@@ -1225,7 +2748,7 @@ index c48b321448..0dc59129a2 100644
 +}
 +#endif
 diff --git a/system/stack/btm/btm_sco.h b/system/stack/btm/btm_sco.h
-index ab55e78e44..56cd0c7962 100644
+index ab55e78..56cd0c7 100644
 --- a/system/stack/btm/btm_sco.h
 +++ b/system/stack/btm/btm_sco.h
 @@ -43,6 +43,20 @@ void init();
@@ -1250,7 +2773,7 @@ index ab55e78e44..56cd0c7962 100644
  void cleanup();
  
 diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
-index aef34f6a46..6e37b85bd2 100644
+index aef34f6..6e37b85 100644
 --- a/system/stack/btm/btm_sco_hci.cc
 +++ b/system/stack/btm/btm_sco_hci.cc
 @@ -20,16 +20,20 @@
@@ -1410,7 +2933,7 @@ index aef34f6a46..6e37b85bd2 100644
  #else
  void open() {}
 diff --git a/system/stack/btm/btm_sco_hfp_hal_linux.cc b/system/stack/btm/btm_sco_hfp_hal_linux.cc
-index 9ca83962ee..e2d6ae9f9c 100644
+index 9ca8396..e2d6ae9 100644
 --- a/system/stack/btm/btm_sco_hfp_hal_linux.cc
 +++ b/system/stack/btm/btm_sco_hfp_hal_linux.cc
 @@ -20,6 +20,8 @@
@@ -1488,28 +3011,8 @@ index 9ca83962ee..e2d6ae9f9c 100644
    int hci = GetAdapterIndex();
    int fd = btsocket_open_mgmt(hci);
    if (fd < 0) {
-diff --git a/system/stack/mmc/BUILD.gn b/system/stack/mmc/BUILD.gn
-index dd5d1308c6..fa20be174a 100644
---- a/system/stack/mmc/BUILD.gn
-+++ b/system/stack/mmc/BUILD.gn
-@@ -23,7 +23,6 @@ group("mmc") {
-     ":install_minijail_config",
-     ":install_system_service",
-     ":install_tmpfiles_config",
--    ":mmc_service",
-     "//bt/system/stack/mmc/codec_client:libcodec_client",
-     "//bt/system/stack/mmc/proto:mmc_config_proto",
-   ]
-@@ -45,6 +44,7 @@ pkg_config("target_defaults") {
-     "//bt/system/stack/include",
-   ]
-   pkg_deps = [
-+    "dbus-1",
-     "libchrome",
-   ]
-   if (use.fuzzer) {
 diff --git a/system/stack/mmc/codec_client/BUILD.gn b/system/stack/mmc/codec_client/BUILD.gn
-index ae022591d0..6f30620625 100644
+index ae02259..6f30620 100644
 --- a/system/stack/mmc/codec_client/BUILD.gn
 +++ b/system/stack/mmc/codec_client/BUILD.gn
 @@ -14,7 +14,14 @@
@@ -1528,10 +3031,30 @@ index ae022591d0..6f30620625 100644
      "//bt/system/stack/mmc:target_defaults",
      "//bt/system/log:log_defaults",
 diff --git a/system/stack/mmc/codec_client/codec_client.cc b/system/stack/mmc/codec_client/codec_client.cc
-index 24b39e2455..a57a6dfa64 100644
+index 24b39e2..b75119f 100644
 --- a/system/stack/mmc/codec_client/codec_client.cc
 +++ b/system/stack/mmc/codec_client/codec_client.cc
-@@ -94,6 +94,7 @@ CodecClient::~CodecClient() {
+@@ -44,6 +44,8 @@ const int kUnsupportedType = -1;
+ const int kHfpLc3EncoderId = 1;
+ const int kHfpLc3DecoderId = 2;
+ const int kA2dpAacEncoderId = 5;
++const int kA2dpAptxEncoderId = 6;
++const int kA2dpLdacEncoderId = 7;
+ 
+ // Maps |ConfigParam| proto field to int, because proto-lite does not support
+ // reflection.
+@@ -54,6 +56,10 @@ int CodecId(const ConfigParam& config) {
+     return kHfpLc3DecoderId;
+   } else if (config.has_a2dp_aac_encoder_param()) {
+     return kA2dpAacEncoderId;
++  } else if (config.has_a2dp_aptx_encoder_param()) {
++    return kA2dpAptxEncoderId;
++  } else if (config.has_a2dp_ldac_encoder_param()) {
++    return kA2dpLdacEncoderId;
+   } else {
+     log::warn("Unsupported codec type is used.");
+     return kUnsupportedType;
+@@ -94,6 +100,7 @@ CodecClient::~CodecClient() {
  
  int CodecClient::init(const ConfigParam config) {
    cleanup();
@@ -1539,7 +3062,7 @@ index 24b39e2455..a57a6dfa64 100644
  
    // Set up record logger.
    record_logger_ = std::make_unique<MmcRttLogger>(CodecId(config));
-@@ -169,9 +170,11 @@ void CodecClient::cleanup() {
+@@ -169,9 +176,11 @@ void CodecClient::cleanup() {
    // Upload Rtt statics when the session ends.
    if (record_logger_.get() != nullptr) {
      record_logger_->UploadTranscodeRttStatics();
@@ -1552,7 +3075,7 @@ index 24b39e2455..a57a6dfa64 100644
    dbus::MethodCall method_call(mmc::kMmcServiceInterface, mmc::kCodecCleanUpMethod);
  
    std::unique_ptr<dbus::Response> dbus_response =
-@@ -221,7 +224,8 @@ int CodecClient::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len)
+@@ -221,7 +230,8 @@ int CodecClient::transcode(uint8_t* i_buf, int i_len, uint8_t* o_buf, int o_len)
    pfd.fd = skt_fd_;
    pfd.events = POLLIN;
  
@@ -1562,8 +3085,44 @@ index 24b39e2455..a57a6dfa64 100644
    if (pollret < 0) {
      log::error("Failed to poll: {}", strerror(errno));
      return -errno;
+diff --git a/system/stack/mmc/proto/mmc_config.proto b/system/stack/mmc/proto/mmc_config.proto
+index c8f9ead..ca32f30 100644
+--- a/system/stack/mmc/proto/mmc_config.proto
++++ b/system/stack/mmc/proto/mmc_config.proto
+@@ -95,6 +95,23 @@ message AacEncoderParam {
+   int32 effective_frame_size = 5;
+ }
+ 
++message AptxEncoderParam {
++  // aptX and aptX HD always consume stereo, interleaved little-endian PCM.
++  enum Variant {
++    kAptxClassic = 0;
++    kAptxHd = 1;
++  }
++  Variant variant = 1;
++}
++
++message LdacEncoderParam {
++  int32 sample_rate = 1;
++  int32 channel_mode = 2;
++  int32 pcm_format = 3;
++  int32 quality_mode = 4;
++  int32 effective_frame_size = 5;
++}
++
+ // union of different codec parameters
+ message ConfigParam {
+   // This determines the codec type and whether it is an encoder or a decoder.
+@@ -106,5 +123,7 @@ message ConfigParam {
+     SbcEncoderParam hfp_msbc_encoder_param = 3;
+     SbcDecoderParam hfp_msbc_decoder_param = 4;
+     AacEncoderParam a2dp_aac_encoder_param = 5;
++    AptxEncoderParam a2dp_aptx_encoder_param = 6;
++    LdacEncoderParam a2dp_ldac_encoder_param = 7;
+   }
+ }
 diff --git a/system/udrv/ulinux/uipc.cc b/system/udrv/ulinux/uipc.cc
-index c3444d4b57..cf21baebb8 100644
+index c3444d4..cf21bae 100644
 --- a/system/udrv/ulinux/uipc.cc
 +++ b/system/udrv/ulinux/uipc.cc
 @@ -572,7 +572,7 @@ bool UIPC_Open(tUIPC_STATE& uipc, tUIPC_CH_ID ch_id, tUIPC_RCV_CBACK* p_cback,

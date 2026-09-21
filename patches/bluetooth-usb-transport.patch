@@ -1,0 +1,32 @@
+--- a/system/stack/btm/btm_sco_hfp_hal_linux.cc
++++ b/system/stack/btm/btm_sco_hfp_hal_linux.cc
+@@ -297,6 +297,18 @@
+     software_hci_transport = std::strcmp(value, "true") == 0;
+   }
+   if (software_hci_transport) {
++    // The userspace USB transport publishes the payload size of its selected
++    // mSBC alternate setting. In particular, this Realtek adapter has no USB
++    // alt 6: its alt 1 needs 24-byte HCI payloads, not the old fixed 60 bytes.
++    uint8_t msbc_packet_size = 60;
++    if (const char* size = std::getenv("FLOSS_HFP_MSBC_PACKET_SIZE")) {
++      if (std::strcmp(size, "24") == 0) msbc_packet_size = 24;
++      else if (std::strcmp(size, "60") == 0) msbc_packet_size = 60;
++      else {
++        bluetooth::log::warn("Disabling software mSBC: invalid transport packet size");
++        msbc_packet_size = 0;
++      }
++    }
+     auto controller = bluetooth::shim::GetController();
+     if (controller != nullptr && controller->SupportsSco()) {
+       cached_codecs.push_back({.inner = {.codec = codec::CVSD}});
+@@ -304,8 +316,8 @@
+     // HFP mSBC T1 requires EV3 packets; the existing software codec handles
+     // framing. The explicit property asserts that the host transport carries
+     // these SCO packets; the feature bit alone cannot establish that.
+-    if (controller != nullptr && controller->SupportsEv3Packets()) {
+-      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = 60});
++    if (msbc_packet_size && controller != nullptr && controller->SupportsEv3Packets()) {
++      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = msbc_packet_size});
+     }
+     bluetooth::log::warn("Using explicitly enabled software HCI SCO transport; "
+                          "kernel USB transport support must be verified separately");

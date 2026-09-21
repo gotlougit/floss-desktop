@@ -13,6 +13,6 @@ if destination == root or root.is_relative_to(destination):
 destination.mkdir(parents=True, exist_ok=True)
 for name in ('flake.nix', 'flake.lock'):
     shutil.copy2(root / name, destination / name)
-for name in ('nix', 'patches', 'pw-floss'):
+for name in ('nix', 'patches', 'pw-floss', 'floss-usb'):
     shutil.copytree(root / name, destination / name, dirs_exist_ok=True)
 print(destination)
