@@ -1,0 +1,4 @@
+#pragma once
+#include <QString>
+inline QString i18n(const char *s) { return QString::fromUtf8(s); }
+inline QString i18n(const char *s, const char *arg) { return QString::fromUtf8(s).arg(arg); }

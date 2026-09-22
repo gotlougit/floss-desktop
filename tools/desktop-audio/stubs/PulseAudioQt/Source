@@ -1,0 +1,13 @@
+#pragma once
+#include <QObject>
+#include <QString>
+namespace PulseAudioQt {
+// The device model is mocked; stream lifetime and PulseAudio I/O are real.
+class Source : public QObject {
+public:
+    explicit Source(QString name) : m_name(name) {}
+    QString name() const { return m_name; }
+private:
+    QString m_name;
+};
+}

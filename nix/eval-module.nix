@@ -26,6 +26,9 @@ let
   cfg = system.config;
 in {
   failedAssertions = map (a: a.message) (builtins.filter (a: !a.assertion) cfg.assertions);
+  desktopAudioPatches = {
+    plasmaPa = map builtins.baseNameOf (system.pkgs.kdePackages.plasma-pa.patches or []);
+  };
   bluezService = builtins.hasAttr "bluetooth" cfg.systemd.services;
   kernelPatches = map (patch: patch.name) cfg.boot.kernelPatches;
   usbTransport = if usbTransport then {

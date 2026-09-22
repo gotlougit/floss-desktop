@@ -1246,6 +1246,27 @@ static bool connect_stream(struct bridge *b, unsigned adapter, bool capture)
 		PW_ID_ANY, PW_STREAM_FLAG_MAP_BUFFERS, params, 1) >= 0;
 }
 
+/* Keep the playback endpoint stable, but publish capture only when the card
+ * profile advertises it. Automatic mode keeps a source for demand detection;
+ * fixed music profiles must not offer a nonfunctional microphone to clients. */
+static bool sync_capture_profile(struct bridge *b, unsigned profile)
+{
+    bool wanted = b->automatic ? profile_has_microphone(b, profile) : b->hfp;
+    if (!wanted && b->capture) {
+        /* Destroy deliberately, without treating UNCONNECTED as a failure. */
+        spa_hook_remove(&b->capture_listener);
+        pw_stream_destroy(b->capture);
+        b->capture = NULL;
+        b->capture_running = b->capture_demand = b->capture_format_ready = false;
+        b->capture_primed = false;
+        b->capture_read_pos = b->capture_queued = 0;
+        b->capture_idle_ms = 0;
+        memset(&b->capture_clock, 0, sizeof(b->capture_clock));
+        b->capture_latency_ns = b->capture_latency_update_ns = 0;
+    }
+    return !wanted || b->capture || connect_stream(b, b->adapter, true);
+}
+
 static void quit(void *data, int signal_number)
 {
 	(void)signal_number;
@@ -1506,6 +1527,11 @@ static void automatic_tick(struct bridge *b)
     b->queue_limit = b->rate * b->channels * (b->bits / 8) / 10;
     bool playback_changed = old_rate != b->rate || old_bits != b->bits;
     bool capture_changed = old_capture_rate != b->capture_rate;
+    if (!sync_capture_profile(b, target_profile)) {
+        b->transitioning = false;
+        fail(b, "could not publish profile microphone");
+        return;
+    }
     if (playback_changed) b->playback_format_ready = false;
     if (capture_changed) b->capture_format_ready = false;
     if ((playback_changed && !update_format(b->stream, b->rate, 2, b->bits)) ||
@@ -1634,7 +1660,7 @@ static int run_bridge(int argc, char **argv)
             if (pw_loop_iterate(loop, 20) < 0) break;
         if (b.card_id == SPA_ID_INVALID) goto done;
     }
-	if (!connect_stream(&b, adapter, false) || ((b.hfp || (b.automatic && b.microphone)) && !connect_stream(&b, adapter, true)))
+	if (!connect_stream(&b, adapter, false) || !sync_capture_profile(&b, b.requested_profile))
 		goto done;
     if (b.automatic && !setup_capture_watch(&b)) goto done;
     /* Prime transport buffering. HFP graph queues separately prefill to the

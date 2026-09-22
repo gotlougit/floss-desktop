@@ -193,3 +193,21 @@ Unknown or platform-wide mappings remain unavailable.
 `floss-pairing.service` runs the standalone pairing window during the graphical
 session, hidden while idle. Its existing responder election cooperates with the
 tray and settings. This does not add multi-session/active-seat arbitration.
+
+### Desktop audio lifecycle fixes
+
+The Floss module now applies `nix/desktop-audio-overlay.nix` to the NixOS
+package set. This patches the existing `kdePackages.plasma-pa` microphone-test
+cleanup. The separate flake output `#plasma-pa` is available for building/reviewing
+this package; the `#stack` output does not include it. The patch was inspected
+against plasma-pa 6.7.5. Easy Effects is not patched by this module.
+
+After deploying, a fresh desktop session is required to load the patched Plasma
+component. Previously orphaned microphone-test streams
+belong to the old Plasma process and are not removed by merely building a new
+package. The temporary manual audio links used during diagnosis are not part of
+the permanent fix. No live services were replaced during isolated testing.
+
+Before building with limited bandwidth, inspect `nix build --dry-run` and review
+all missing inputs. `--offline` does **not** prevent fixed-output derivations
+from downloading their sources when Nix decides to build missing dependencies.

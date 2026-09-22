@@ -1,7 +1,7 @@
 # Native Floss audio bridge
 
 `pw-floss --auto --adapter 0` discovers connected media devices, publishes a
-PipeWire sink and (when the device supports HFP) a persistent microphone source,
+PipeWire sink and, in Automatic/Handsfree profiles on HFP-capable devices, a microphone source,
 and recovers after device or daemon disconnection. The NixOS integration starts
 it as a user service. No device address, profile, or PCM rate is needed.
 
@@ -17,8 +17,9 @@ The bridge watches links and consumers rather than source scheduling alone:
 monitor streams and passive level meters do not request HFP. Recording
 from another source does not activate the headset. After two seconds with no
 headset capture demand, the bridge restores A2DP. Playback-only speakers expose
-no microphone. Voice-only devices stay in HFP. Nodes retain their identities
-across profile changes, so applications can keep their selected source/sink.
+no microphone. Voice-only devices stay in HFP. Automatic transport changes retain
+both node identities; selecting a fixed music profile removes the microphone.
+The playback node retains its identity across all profile selections.
 Session priorities prefer a connected headset over ordinary built-in devices;
 WirePlumber still honors an explicitly saved user default.
 
@@ -47,12 +48,13 @@ One connected device is used at a time.
 ## Desktop profile controls
 
 A standard PipeWire Device publishes profiles to PulseAudio and KDE's existing
-sound settings. No plasma-pa fork is needed:
+sound settings. Profile controls use the standard device API; the separate
+plasma-pa patch fixes microphone-test cancellation:
 
-- **Automatic music / headset** follows real microphone demand.
+- **Automatic music / headset** exposes a microphone and follows real capture demand.
 - **High Fidelity Playback (SBC/AAC/aptX/aptX HD/LDAC)** requests that codec through Floss and
-  keeps music mode even if an application opens the microphone. The persistent
-  microphone endpoint supplies silence in this mode.
+  keeps music mode and removes this device's microphone from PipeWire/PulseAudio
+  and desktop input selectors. Other devices' microphones are unaffected.
 - **Handsfree Headset** keeps HFP active, including with no recording application.
   Floss negotiates CVSD or mSBC; there are no separate forced HFP codec choices.
 

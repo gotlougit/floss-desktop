@@ -1,0 +1,10 @@
+#pragma once
+#include <pulse/pulseaudio.h>
+namespace PulseAudioQt {
+inline pa_context *test_context = nullptr;
+class Context {
+public:
+    static Context *instance() { static Context c; return &c; }
+    pa_context *context() { return test_context; }
+};
+}

@@ -31,6 +31,7 @@
             assert report.failedAssertions == [];
             assert !report.bluezService;
             assert report.kernelPatches == [];
+            assert builtins.elem "plasma-pa-microphone-lifecycle.patch" report.desktopAudioPatches.plasmaPa;
             # This is an evaluation report, not a request to realize every
             # store path mentioned by the evaluated system configuration.
             pkgs.writeText "floss-module-evaluation.json"
@@ -49,6 +50,7 @@
           call = file: import file { inherit pkgs sources; };
         in rec {
           pipewire = import ./nix/pipewire.nix { inherit pkgs; };
+          plasma-pa = (import ./nix/desktop-audio-overlay.nix pkgs pkgs).kdePackages.plasma-pa;
           pw-floss = import ./nix/pw-floss.nix { inherit pkgs pipewire; };
           floss-usb = import ./nix/floss-usb.nix { inherit pkgs; };
           bluedevil = call ./nix/bluedevil.nix;

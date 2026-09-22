@@ -1,0 +1,323 @@
+--- a/src/microphonetest.cpp
++++ b/src/microphonetest.cpp
+@@ -8,12 +8,37 @@
+ #include <PulseAudioQt/Context>
+ #include <cmath>
+ #include <pulse/error.h>
++#include <pulse/operation.h>
+ #include <chrono>
++#include <utility>
+ #include <pulse/volume.h>
+ #include <KLocalizedString>
+ 
+ namespace
+ {
++    void releaseStream(pa_stream *&stream)
++    {
++        auto *old = std::exchange(stream, nullptr);
++        if (!old) return;
++        pa_stream_set_state_callback(old, nullptr, nullptr);
++        pa_stream_set_read_callback(old, nullptr, nullptr);
++        pa_stream_set_write_callback(old, nullptr, nullptr);
++        if (pa_stream_get_state(old) == PA_STREAM_CREATING) {
++            // PulseAudio cannot disconnect until creation finishes. Keep the
++            // owned reference in a callback that does not reference the UI.
++            pa_stream_set_state_callback(old, [](pa_stream *pending, void *) {
++                const auto state = pa_stream_get_state(pending);
++                if (state == PA_STREAM_CREATING) return;
++                pa_stream_set_state_callback(pending, nullptr, nullptr);
++                if (state == PA_STREAM_READY) pa_stream_disconnect(pending);
++                pa_stream_unref(pending);
++            }, nullptr);
++            return;
++        }
++        if (pa_stream_get_state(old) == PA_STREAM_READY) pa_stream_disconnect(old);
++        pa_stream_unref(old);
++    }
++
+     constexpr int SAMPLE_RATE = 44100;
+     constexpr std::chrono::milliseconds MAX_RECORD_DURATION{10000};
+     constexpr int MIN_FRAGMENT_SIZE = 256;
+@@ -49,7 +74,13 @@
+ {
+     if (m_source != source) {
+         cleanupStreams();
++        if (m_source) disconnect(m_source, nullptr, this, nullptr);
+         m_source = source;
++        if (source) connect(source, &QObject::destroyed, this, [this]() {
++            cleanupStreams();
++            clearRecording();
++            Q_EMIT sourceChanged();
++        });
+         m_recordedData.clear();
+         m_playbackOffset = 0;
+         m_manualStop = false;
+@@ -128,8 +159,7 @@
+     if (pa_stream_connect_record(m_recordStream, m_source->name().toUtf8().constData(),
+         &attr, static_cast<pa_stream_flags_t>(PA_STREAM_INTERPOLATE_TIMING | PA_STREAM_ADJUST_LATENCY)) < 0) {
+         Q_EMIT showErrorMessage(i18n("Failed to connect record: %1", pa_strerror(pa_context_errno(pa_ctx))));
+-        pa_stream_unref(m_recordStream);
+-        m_recordStream = nullptr;
++        releaseStream(m_recordStream);
+         return;
+     }
+ 
+@@ -147,63 +177,19 @@
+ 
+ void MicrophoneTest::stopRecording()
+ {
++    if (!m_recording) return;
+     m_manualStop = true;
+-
+-    if (m_autoStopTimer.isActive()) {
+-        m_autoStopTimer.stop();
+-    }
+-
+-    if (!m_recordStream) {
+-        m_volumeLevel = 0.0;
+-        m_recording = false;
+-        Q_EMIT recordingChanged();
+-        Q_EMIT volumeLevelChanged();
+-        Q_EMIT hasRecordingChanged();
+-        Q_EMIT recordingFinished();
+-        return;
+-    }
+-
+-    pa_operation *cork_op = pa_stream_cork(m_recordStream, 1, nullptr, nullptr);
+-    if (cork_op) {
+-        pa_operation_unref(cork_op);
+-    }
+-
+-    pa_operation *drain_op = pa_stream_drain(
+-        m_recordStream,
+-        [](pa_stream *s, int success, void *userdata) {
+-            auto *self = static_cast<MicrophoneTest *>(userdata);
+-            if (!self) return;
+-
+-            pa_stream_disconnect(s);
+-            pa_stream_unref(s);
+-
+-            QMetaObject::invokeMethod(self, [self]() {
+-                self->m_recordStream = nullptr;
+-                self->m_volumeLevel = 0.0;
+-                self->m_recording = false;
+-                Q_EMIT self->recordingChanged();
+-                Q_EMIT self->volumeLevelChanged();
+-                Q_EMIT self->hasRecordingChanged();
+-                Q_EMIT self->recordingFinished();
+-                self->playRecording();
+-            });
+-        },
+-        this);
+-
+-    if (drain_op) {
+-        pa_operation_unref(drain_op);
+-    } else {
+-        pa_stream_disconnect(m_recordStream);
+-        pa_stream_unref(m_recordStream);
+-        m_recordStream = nullptr;
+-        m_volumeLevel = 0.0;
+-        m_recording = false;
+-        Q_EMIT recordingChanged();
+-        Q_EMIT volumeLevelChanged();
+-        Q_EMIT hasRecordingChanged();
+-        Q_EMIT recordingFinished();
+-        playRecording();
+-    }
++    m_autoStopTimer.stop();
++    // Record streams cannot be drained. All recorded samples are already in
++    // m_recordedData; detach callbacks before releasing the owned reference.
++    releaseStream(m_recordStream);
++    m_recording = false;
++    m_volumeLevel = 0.0;
++    Q_EMIT recordingChanged();
++    Q_EMIT volumeLevelChanged();
++    Q_EMIT hasRecordingChanged();
++    Q_EMIT recordingFinished();
++    playRecording();
+ }
+ 
+ void MicrophoneTest::playRecording()
+@@ -241,28 +227,25 @@
+             nullptr,
+             nullptr) < 0) {
+         Q_EMIT showErrorMessage(i18n("Couldn't connect playback"));
+-        pa_stream_unref(m_playbackStream);
+-        m_playbackStream = nullptr;
++        releaseStream(m_playbackStream);
+         return;
+     }
+ 
+     m_playing = true;
+     Q_EMIT playingChanged();
+ 
+-    pa_stream_cork(m_playbackStream, 0, nullptr, nullptr);
++    if (auto *op = pa_stream_cork(m_playbackStream, 0, nullptr, nullptr)) pa_operation_unref(op);
+ }
+ 
+ void MicrophoneTest::stopPlaying()
+ {
+-    if (!m_playing) {
+-        return;
+-    }
+-
+-    if (m_playbackStream) {
+-        pa_stream_disconnect(m_playbackStream);
+-        pa_stream_unref(m_playbackStream);
+-        m_playbackStream = nullptr;
+-    }
++    if (m_drainOperation) {
++        pa_operation_cancel(m_drainOperation);
++        pa_operation_unref(m_drainOperation);
++        m_drainOperation = nullptr;
++    }
++    releaseStream(m_playbackStream);
++    if (!m_playing) return;
+ 
+     m_playing = false;
+     Q_EMIT playingChanged();
+@@ -283,17 +266,13 @@
+     const bool wasRecording = m_recording;
+     const bool wasPlaying = m_playing;
+ 
+-    if (m_recordStream) {
+-        pa_stream_disconnect(m_recordStream);
+-        pa_stream_unref(m_recordStream);
+-        m_recordStream = nullptr;
+-    }
+-
+-    if (m_playbackStream) {
+-        pa_stream_disconnect(m_playbackStream);
+-        pa_stream_unref(m_playbackStream);
+-        m_playbackStream = nullptr;
+-    }
++    if (m_drainOperation) {
++        pa_operation_cancel(m_drainOperation);
++        pa_operation_unref(m_drainOperation);
++        m_drainOperation = nullptr;
++    }
++    releaseStream(m_recordStream);
++    releaseStream(m_playbackStream);
+ 
+     if (m_autoStopTimer.isActive()) {
+         m_autoStopTimer.stop();
+@@ -321,15 +300,10 @@
+     pa_stream_state_t state = pa_stream_get_state(s);
+ 
+     if (state == PA_STREAM_FAILED || state == PA_STREAM_TERMINATED) {
+-        if (s == self->m_recordStream) {
+-            self->m_recordStream = nullptr;
+-            self->m_volumeLevel = 0.0;
+-            Q_EMIT self->volumeLevelChanged();
+-        } else if (s == self->m_playbackStream) {
+-            self->m_playbackStream = nullptr;
+-            self->m_playing = false;
+-            Q_EMIT self->playingChanged();
+-            Q_EMIT self->playbackFinished();
++        if (s == self->m_recordStream || s == self->m_playbackStream) {
++            // Device/server loss must release the stream, not just lose its
++            // pointer while callbacks still reference this object.
++            self->cleanupStreams();
+         }
+     }
+ }
+@@ -337,28 +311,22 @@
+ void MicrophoneTest::stream_write_callback(pa_stream *s, size_t nbytes, void *userdata)
+ {
+     auto *self = static_cast<MicrophoneTest *>(userdata);
+-    if (!self || !self->m_playbackStream) return;
++    if (!self || s != self->m_playbackStream) return;
+ 
+     if (self->m_playbackOffset >= self->m_recordedData.size()) {
+-        pa_operation *op = pa_stream_drain(
+-            s,
+-            [](pa_stream *s, int, void *userdata) {
+-                auto *self = static_cast<MicrophoneTest *>(userdata);
+-                if (!self || !self->m_playbackStream) return;
+-
+-                pa_stream_disconnect(s);
+-                pa_stream_unref(s);
+-
+-                QMetaObject::invokeMethod(self, [self]() {
+-                    self->m_playbackStream = nullptr;
+-                    self->m_playing = false;
+-                    Q_EMIT self->playingChanged();
+-                    Q_EMIT self->playbackFinished();
+-                });
+-            },
+-            self);
+-
+-        if (op) pa_operation_unref(op);
++        // Submit a single drain and cancel it on Stop/destruction. No stale
++        // completion may clear the pointer to a later playback stream.
++        pa_stream_set_write_callback(s, nullptr, nullptr);
++        self->m_drainOperation = pa_stream_drain(s, [](pa_stream *finished, int, void *userdata) {
++            auto *self = static_cast<MicrophoneTest *>(userdata);
++            if (finished != self->m_playbackStream) return;
++            if (self->m_drainOperation) {
++                pa_operation_unref(self->m_drainOperation);
++                self->m_drainOperation = nullptr;
++            }
++            self->stopPlaying();
++        }, self);
++        if (!self->m_drainOperation) self->stopPlaying();
+         return;
+     }
+ 
+@@ -376,7 +344,9 @@
+     auto *self = static_cast<MicrophoneTest *>(userdata);
+     const void *data;
+ 
+-    if (pa_stream_peek(s, &data, &nbytes) < 0 || !data) {
++    if (s != self->m_recordStream || pa_stream_peek(s, &data, &nbytes) < 0) return;
++    if (!data) {
++        if (nbytes) pa_stream_drop(s); // A PulseAudio hole still occupies the buffer.
+         return;
+     }
+ 
+--- a/src/microphonetest.h
++++ b/src/microphonetest.h
+@@ -5,6 +5,7 @@
+ */
+ 
+ #include <QTimer>
++#include <QPointer>
+ #include <QByteArray>
+ #include <pulse/stream.h>
+ #include <PulseAudioQt/Source>
+@@ -54,9 +55,11 @@
+     static void stream_read_callback(pa_stream *s, size_t nbytes, void *userdata);
+     static void stream_write_callback(pa_stream *s, size_t nbytes, void *userdata);
+ 
+-    PulseAudioQt::Source *m_source = nullptr;
++    QPointer<PulseAudioQt::Source> m_source;
+     pa_stream *m_recordStream = nullptr;
+     pa_stream *m_playbackStream = nullptr;
++
++    pa_operation *m_drainOperation = nullptr;
+ 
+     QByteArray m_recordedData;
+     size_t m_playbackOffset = 0;
+--- a/applet/MicrophoneTestView.qml
++++ b/applet/MicrophoneTestView.qml
+@@ -38,17 +38,14 @@
+                 port = "";
+             }
+         } else {
++            micTester.source = null;
+             sourceObject = null;
+         }
+     }
+ 
+     function stopTest() {
+-        if (micTester.recording) {
+-            micTester.stopRecording();
+-        }
+-        if (micTester.playing) {
+-            micTester.stopPlaying();
+-        }
++        // Closing the test cancels it; stopRecording() deliberately replays.
++        micTester.cleanupStreams();
+         micTester.clearRecording();
+     }
+ 

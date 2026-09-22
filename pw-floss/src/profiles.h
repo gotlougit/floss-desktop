@@ -11,6 +11,10 @@ static const char *profile_descriptions[] = {
     "High Fidelity Playback (AAC)", "Handsfree Headset",
     "High Fidelity Playback (aptX)", "High Fidelity Playback (aptX HD)",
     "High Fidelity Playback (LDAC)" };
+static bool profile_has_microphone(struct bridge *b, unsigned profile)
+{
+    return b->microphone && (profile == 0 || profile == 3);
+}
 static bool profile_available(struct bridge *b, unsigned p)
 {
     if (p >= SPA_N_ELEMENTS(profile_codecs)) return false;
@@ -74,7 +78,7 @@ static int profile_enum(void *data, int seq, uint32_t id, uint32_t start,
         spa_pod_builder_prop(&builder,SPA_PARAM_PROFILE_classes,0);
         spa_pod_builder_push_struct(&builder,&f[1]);
         uint32_t out = 0, in = 1;
-        bool mic = b->microphone && (p == 0 || p == 3);
+        bool mic = profile_has_microphone(b, p);
         spa_pod_builder_int(&builder,mic ? 2 : 1);
         spa_pod_builder_add_struct(&builder,SPA_POD_String("Audio/Sink"),SPA_POD_Int(1),
             SPA_POD_String("card.profile.devices"),SPA_POD_Array(sizeof(out),SPA_TYPE_Int,1,&out));

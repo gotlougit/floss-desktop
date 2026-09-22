@@ -24,6 +24,9 @@ p.add_argument('--pulse-tools', type=Path, help='Existing PulseAudio bin directo
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--cases', default='sbc,aac,speaker,mono,cvsd,msbc,delayed,hfp-only,denied,lifecycle,defaults')
 p.add_argument('--pulse-config', type=Path, help='Extra pipewire-pulse configuration fragment')
+p.add_argument('--microphone-lifecycle', type=Path, help='Compiled MicrophoneTest lifecycle fixture')
+p.add_argument('--plasma-pa', type=Path, help='Cached Plasma audio package for microphone cancellation regression')
+p.add_argument('--legacy-kde-cancel', action='store_true', help='Exercise the former panel-close sequence as a negative control')
 p.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
 a = p.parse_args()
 if not a.inside:
@@ -51,6 +54,26 @@ if not a.inside:
         command += ['--peak-meter', '/peak-meter']
     if a.vlc:
         command += ['--vlc', str(a.vlc.resolve())]
+    if a.microphone_lifecycle:
+        mount_index = command.index('--setenv')
+        command[mount_index:mount_index] = ['--ro-bind', str(a.microphone_lifecycle.resolve()), '/microphone-lifecycle']
+        command += ['--microphone-lifecycle', '/microphone-lifecycle']
+    desktop_paths = []
+    for option, package in [('plasma-pa', a.plasma_pa)]:
+        if package:
+            package = package.resolve()
+            desktop_paths += [str(package)] + subprocess.check_output(
+                ['nix-store', '-qR', str(package)], text=True).splitlines()
+            command += ['--' + option, str(package)]
+    if desktop_paths:
+        mount_index = command.index('--setenv')
+        command[mount_index:mount_index] = ['--setenv', 'SMOKE_DESKTOP_PATHS', json.dumps(desktop_paths)]
+    if a.plasma_pa:
+        mount_index = command.index('--setenv')
+        command[mount_index:mount_index] = ['--ro-bind',
+            str(Path(__file__).resolve().parent / 'desktop-audio/cancel-microphone.qml'), '/cancel-microphone.qml']
+    if a.legacy_kde_cancel:
+        command += ['--legacy-kde-cancel']
     sys.exit(subprocess.call(command))
 
 for name in ('/tmp/runtime', '/tmp/config', '/tmp/state', '/tmp/cache', '/tmp/data', '/var/run/bluetooth/audio'):
@@ -85,8 +108,8 @@ def stop(child):
         try: child.wait(timeout=5)
         except subprocess.TimeoutExpired: child.kill(); child.wait()
 
-def wait_for(predicate, message):
-    deadline = time.monotonic() + 8
+def wait_for(predicate, message, timeout=8):
+    deadline = time.monotonic() + timeout
     while not predicate():
         assert time.monotonic() < deadline, message
         time.sleep(.05)
@@ -202,6 +225,38 @@ try:
         '--playback-props=media.class=Audio/Source node.name=test_builtin_mic node.pause-on-idle=true priority.session=2009'])
     Path('/tmp/music.raw').write_bytes(b''.join(struct.pack('<hh', 8000 if i % 120 < 60 else -8000,
         8000 if i % 120 < 60 else -8000) for i in range(48000 * 40)))
+    if 'mic-lifecycle' in a.cases.split(','):
+        assert a.microphone_lifecycle
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        pulse = start('pulse-mic-lifecycle', [str(a.pipewire/'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        fixture = start('mic-lifecycle', [str(a.microphone_lifecycle), 'test_builtin_mic'])
+        assert fixture.wait(timeout=25) == 0, report('mic-lifecycle')
+        stop(pulse)
+        checks.append({'case':'mic-lifecycle','cancelCycles':10,'deviceLossCycles':5,'destroyDuringCreation':True,'naturalPlaybackCompletes':True})
+    if a.plasma_pa:
+        paths = json.loads(os.environ['SMOKE_DESKTOP_PATHS'])
+        for key, suffix in [('QML_IMPORT_PATH', 'lib/qt-6/qml'), ('QT_PLUGIN_PATH', 'lib/qt-6/plugins')]:
+            env[key] = ':'.join(dict.fromkeys(str(Path(p)/suffix) for p in paths if (Path(p)/suffix).is_dir()))
+        env.update(QT_QPA_PLATFORM='offscreen', QT_QUICK_BACKEND='software', QT_FORCE_STDERR_LOGGING='1')
+    if 'kde-cancel' in a.cases.split(','):
+        assert a.plasma_pa and a.pulse_tools
+        env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
+        pulse = start('pulse-kde', [str(a.pipewire/'bin/pipewire-pulse')])
+        wait_for(lambda: Path('/tmp/runtime/pulse/native').exists(), 'Pulse socket missing')
+        mock, bridge = begin('aac','kde-cancel')
+        qml = next(str(Path(p)/'bin/qml') for p in paths if (Path(p)/'bin/qml').is_file())
+        Path('/tmp/cancel.qml').write_text(Path('/cancel-microphone.qml').read_text().replace(
+            'LEGACY_CANCEL', str(a.legacy_kde_cancel).lower()))
+        client = start('kde-cancel', [qml, '/tmp/cancel.qml'])
+        wait_for(lambda: 'DONE' in report('kde-cancel'), 'KDE cancellation did not finish', timeout=30)
+        time.sleep(.5)
+        streams = json.loads(subprocess.check_output([str(a.pulse_tools/'pactl'), '-f','json','list','sink-inputs'], env=env, text=True))
+        leaked = [s for s in streams if s['properties'].get('media.name') == 'MicTest-Playback']
+        (a.output/'kde-streams.json').write_text(json.dumps(leaked,indent=2))
+        assert not leaked, f'{len(leaked)} microphone replays survived panel cancellation'
+        stop(client); finish(mock,bridge); stop(pulse)
+        checks.append({'case':'kde-cancel','cycles':10,'remainingReplays':0})
     if 'profiles' in a.cases.split(','):
         assert a.pulse_tools, '--pulse-tools is required'
         env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
@@ -241,19 +296,27 @@ try:
         wait_for(lambda: current_profile() == 'hfp','manual HFP failed')
         time.sleep(2.5)
         assert current_profile() == 'hfp', 'manual HFP reverted without capture'
+        capture = record('profiles-hfp-record', source)
+        time.sleep(0.5)
         select('a2dp-sink-aac')
         assert 'codec-request codec=1 accepted=1' in report('mock-profiles')
         assert 'codec-request codec=1 accepted=0' in report('mock-profiles'), 'delayed codec release was not exercised'
-        capture = record('profiles-fixed-music-record',source)
+        wait_for(lambda: source not in node_ids(), 'AAC exposes a microphone')
+        wait_for(lambda: all(s['name'] != source for s in json.loads(pactl('-f','json','list','sources'))),
+            'PulseAudio still exposes the AAC microphone to KDE')
+        stop(capture)
         time.sleep(2.5)
         assert current_profile() == 'a2dp', 'fixed music profile switched for capture'
         select('a2dp-sink-sbc')
         assert 'codec-request codec=0 accepted=1' in report('mock-profiles')
+        wait_for(lambda: source not in node_ids(), 'SBC exposes a microphone')
         select('auto')
+        wait_for(lambda: source in node_ids(), 'automatic profile did not recreate microphone')
+        capture = record('profiles-auto-record',source)
         wait_for(lambda: current_profile() == 'hfp','automatic profile ignored real recording')
         stop(capture)
         wait_for(lambda: current_profile() == 'a2dp','automatic profile failed to restore music')
-        assert node_ids() == ids, 'profile choice replaced endpoint nodes'
+        assert node_ids()[sink] == ids[sink], 'profile choice replaced playback endpoint'
         assert sink_volume() == before, ('stereo balance changed across profiles',before,sink_volume())
         # Old deployments saved a MONO channel map after HFP. Restoring that
         # state onto a stereo endpoint must duplicate the gain, not mute FR.
@@ -279,10 +342,11 @@ try:
         bridge = start('bridge-profiles-restored',bridge_command)
         wait_for(lambda: len(cards()) == 1 and cards()[0]['active_profile'] == 'a2dp-sink-aac',
             'saved profile was not restored after bridge restart')
+        wait_for(lambda: source not in node_ids(), 'restored AAC exposes a microphone')
         finish(mock,bridge)
         stop(pulse)
         checks.append({'case':'profiles','pulseCardControls':True,'codecRequests':True,
-            'manualHfpPersists':True,'fixedMusicSuppressesHfp':True,'automaticRestored':True,'stereoBalancePreserved':True,'legacyMonoRepaired':True,'savedProfileRestored':True})
+            'manualHfpPersists':True,'fixedMusicSuppressesHfp':True,'fixedMusicHidesMicrophone':True,'automaticRestored':True,'stereoBalancePreserved':True,'legacyMonoRepaired':True,'savedProfileRestored':True})
     if 'hifi-profiles' in a.cases.split(','):
         assert a.pulse_tools, '--pulse-tools is required'
         env['PULSE_SERVER'] = 'unix:/tmp/runtime/pulse/native'
@@ -309,18 +373,20 @@ try:
                 'high-fidelity profile selection failed: '+profile)
             wait_for(lambda: f'codec-request codec={codec} accepted=1' in report('mock-hifi-profiles'),
                 'codec selection did not reach Floss: '+profile)
-            assert node_ids() == ids, 'codec switch replaced audio nodes'
+            wait_for(lambda: len(node_ids()) == 1, 'music codec exposes a microphone: '+profile)
+            assert node_ids()[sink] == ids[sink], 'codec switch replaced playback node'
         pactl('set-card-profile', card['name'], 'headset-head-unit')
         wait_for(lambda: current_profile() == 'hfp', 'manual HFP failed after codec switches')
         pactl('set-card-profile', card['name'], 'a2dp-sink-ldac')
         wait_for(lambda: cards()[0]['active_profile'] == 'a2dp-sink-ldac' and current_profile() == 'a2dp',
             'LDAC failed after HFP')
-        assert node_ids() == ids, 'HFP round trip replaced high-fidelity nodes'
+        wait_for(lambda: len(node_ids()) == 1, 'LDAC exposes a microphone after HFP')
+        assert node_ids()[sink] == ids[sink], 'HFP round trip replaced playback node'
         stop(play)
         finish(mock,bridge)
         stop(pulse)
         checks.append({'case':'hifi-profiles','pulseCardControls':True,
-            'codecRequests':[2,3,4,1], 'hfpRoundTrip':True, 'stableNodes':True})
+            'codecRequests':[2,3,4,1], 'hfpRoundTrip':True, 'stablePlaybackNode':True, 'musicHidesMicrophone':True})
     if 'no-sco-pcm' in a.cases.split(','):
         mock, bridge = begin('no-sco-pcm','no-sco-pcm')
         source = next(n['node.name'] for n in nodes() if n['media.class'] == 'Audio/Source')
@@ -452,7 +518,7 @@ try:
         assert bridge.poll() is None, 'bridge crashed on player disconnect'
         finish(mock, bridge)
         checks.append({'case': 'pulse-pause', 'cycles': 8, 'stableNodeIds': True})
-    for kind in (item for item in a.cases.split(',') if item not in ('no-sco-pcm', 'capture-backlog', 'hifi-profiles', 'profiles', 'peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
+    for kind in (item for item in a.cases.split(',') if item not in ('mic-lifecycle', 'kde-cancel', 'no-sco-pcm', 'capture-backlog', 'hifi-profiles', 'profiles', 'peak-meter', 'vlc', 'lifecycle', 'denied', 'hfp-only', 'defaults', 'pulse-pause', 'jitter')):
         mock, bridge = begin(kind, kind)
         mock_name = 'mock-' + kind
         props = nodes()

@@ -362,6 +362,7 @@ in {
       KERNEL=="vhci", GROUP="floss-usb", MODE="0660"
       SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0bda", ATTR{idProduct}=="c123", GROUP="floss-usb", MODE="0660"
     '';
+    nixpkgs.overlays = [ (import ./desktop-audio-overlay.nix) ];
     services.pipewire.package = packages.pipewire;
     services.pipewire.extraConfig.pipewire-pulse."90-floss-passive-meters" =
       builtins.fromJSON (builtins.readFile ./passive-meters.json);
