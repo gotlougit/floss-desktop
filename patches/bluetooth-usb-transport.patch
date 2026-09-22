@@ -30,3 +30,137 @@
      }
      bluetooth::log::warn("Using explicitly enabled software HCI SCO transport; "
                           "kernel USB transport support must be verified separately");
+diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
+--- a/system/stack/btm/btm_sco_hci.cc
++++ b/system/stack/btm/btm_sco_hci.cc
+@@ -270,7 +270,9 @@
+ constexpr size_t btm_wbs_supported_pkt_size[] = {BTM_MSBC_PKT_LEN, 72, 24, 0};
+ /* Buffer size should be set to least common multiple of SCO packet size and
+  * BTM_MSBC_PKT_LEN for optimizing buffer copy. */
+-constexpr size_t btm_wbs_msbc_buffer_size[] = {BTM_MSBC_PKT_LEN, 360, 120, 0};
++// Retain a partial frame while accepting the next complete transport packet,
++// including when 60-byte packets arrive out of phase with H2 frame boundaries.
++constexpr size_t btm_wbs_msbc_buffer_size[] = {BTM_MSBC_PKT_LEN * 2, 360, 120, 0};
+ 
+ /* The pre-computed SCO packet per HFP 1.7 spec. This mSBC packet will be
+  * decoded into all-zero input PCM. */
+@@ -707,7 +709,8 @@
+     return input.size();
+   }
+ 
+-  const uint8_t* find_msbc_pkt_head() {
++  const uint8_t* find_msbc_pkt_head(bool* incomplete) {
++    *incomplete = false;
+     if (read_corrupted) {
+       read_corrupted = false;
+       return nullptr;
+@@ -715,10 +718,13 @@
+ 
+     size_t rp = 0;
+     size_t data_len = decode_buf_data_len();
+-    while (rp < BTM_MSBC_PKT_LEN && data_len - rp >= BTM_MSBC_PKT_LEN) {
+-      if ((msbc_decode_buf[(decode_buf_ro + rp) % buf_size] != BTM_MSBC_H2_HEADER_0) ||
+-          (!verify_h2_header_seq_num(msbc_decode_buf[(decode_buf_ro + rp + 1) % buf_size])) ||
+-          (msbc_decode_buf[(decode_buf_ro + rp + 2) % buf_size] != BTM_MSBC_SYNC_WORD)) {
++    while (rp < BTM_MSBC_PKT_LEN && rp < data_len) {
++      size_t available = data_len - rp;
++      if (msbc_decode_buf[(decode_buf_ro + rp) % buf_size] != BTM_MSBC_H2_HEADER_0 ||
++          (available >= 2 &&
++           !verify_h2_header_seq_num(msbc_decode_buf[(decode_buf_ro + rp + 1) % buf_size])) ||
++          (available >= 3 &&
++           msbc_decode_buf[(decode_buf_ro + rp + 2) % buf_size] != BTM_MSBC_SYNC_WORD)) {
+         rp++;
+         continue;
+       }
+@@ -726,6 +732,15 @@
+       if (rp != 0) {
+         log::warn("Skipped {} bytes of mSBC data ahead of a valid mSBC frame", rp);
+         incr_buf_offset(decode_buf_ro, decode_buf_ro_mirror, buf_size, rp);
++      }
++
++      // A valid header (or prefix) can arrive before the rest of its frame.
++      // Preserve it until the next transport packet instead of consuming 60
++      // bytes as loss concealment, which can keep 24-byte traffic permanently
++      // out of phase and turn every decoded frame into silence.
++      if (available < BTM_MSBC_PKT_LEN) {
++        *incomplete = true;
++        return nullptr;
+       }
+ 
+       // Get the frame head.
+@@ -850,6 +865,7 @@
+ 
+ size_t decode(const uint8_t** out_data) {
+   const uint8_t* frame_head = nullptr;
++  bool incomplete = false;
+ 
+   if (msbc_info == nullptr) {
+     log::warn("mSBC buffer uninitialized or cleaned");
+@@ -865,7 +881,10 @@
+     return 0;
+   }
+ 
+-  frame_head = msbc_info->find_msbc_pkt_head();
++  frame_head = msbc_info->find_msbc_pkt_head(&incomplete);
++  if (incomplete) {
++    return 0;
++  }
+   if (frame_head == nullptr) {
+     /* Done with parsing the raw bytes just read. If we couldn't find a valid
+      * mSBC frame head, we shall treat the existing BTM_MSBC_PKT_LEN length
+diff --git a/system/stack/test/btm/sco_hci_test.cc b/system/stack/test/btm/sco_hci_test.cc
+--- a/system/stack/test/btm/sco_hci_test.cc
++++ b/system/stack/test/btm/sco_hci_test.cc
+@@ -189,6 +189,8 @@
+     payload.push_back(0);
+   }
+   ASSERT_EQ(bluetooth::audio::sco::wbs::enqueue_packet(payload, false), true);
++  // Retain an incomplete frame while accepting the next transport packet.
++  ASSERT_EQ(bluetooth::audio::sco::wbs::enqueue_packet(payload, false), true);
+   // Return 0 if buffer is full
+   ASSERT_EQ(bluetooth::audio::sco::wbs::enqueue_packet(payload, false), false);
+ }
+@@ -285,6 +287,35 @@
+   // No remaining data to decode
+   ASSERT_EQ(bluetooth::audio::sco::swb::decode(&decoded), size_t(0));
+   ASSERT_EQ(decoded, nullptr);
++}
++
++TEST_F(ScoHciWbsTest, WbsDecodeEveryInitialAlignment) {
++  for (size_t packet_size : {24u, 60u, 72u}) {
++    for (size_t prefix = 0; prefix < 60; ++prefix) {
++      SCOPED_TRACE(::testing::Message() << "packet_size=" << packet_size << " prefix=" << prefix);
++      bluetooth::audio::sco::wbs::init(packet_size);
++      std::vector<uint8_t> stream(prefix, 0x55);
++      for (size_t i = 0; i < 80; ++i) {
++        stream.insert(stream.end(), msbc_zero_packet.begin(), msbc_zero_packet.end());
++      }
++      size_t decoded_frames = 0;
++      for (size_t offset = 0; offset + packet_size <= stream.size(); offset += packet_size) {
++        std::vector<uint8_t> packet(stream.begin() + offset, stream.begin() + offset + packet_size);
++        ASSERT_TRUE(bluetooth::audio::sco::wbs::enqueue_packet(packet, false));
++        const uint8_t* decoded = nullptr;
++        while (bluetooth::audio::sco::wbs::decode(&decoded)) {
++          ASSERT_NE(decoded, nullptr);
++          ++decoded_frames;
++        }
++      }
++      int frames = 0;
++      double loss_ratio = 1;
++      ASSERT_TRUE(bluetooth::audio::sco::wbs::fill_plc_stats(&frames, &loss_ratio));
++      EXPECT_GE(decoded_frames, 78u);
++      EXPECT_EQ(loss_ratio, 0);
++      bluetooth::audio::sco::wbs::cleanup();
++    }
++  }
+ }
+ 
+ TEST_F(ScoHciWbsTest, WbsDecodeWithIrregularOffset) {
+@@ -412,6 +443,7 @@
+   ASSERT_EQ(bluetooth::audio::sco::wbs::encode(data, sizeof(data) - 1), size_t(0));
+   ASSERT_EQ(bluetooth::audio::sco::wbs::encode(data, sizeof(data)), sizeof(data));
+ 
++  ASSERT_EQ(bluetooth::audio::sco::wbs::encode(data, sizeof(data)), sizeof(data));
+   // Return 0 if the packet buffer is full
+   ASSERT_EQ(bluetooth::audio::sco::wbs::encode(data, sizeof(data)), size_t(0));
+ }

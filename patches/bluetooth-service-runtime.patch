@@ -1866,3 +1866,56 @@ new file mode 100644
 +        assert!(resolve(&f.0, -1).is_err());
 +    }
 +}
+diff --git a/system/gd/rust/linux/stack/src/bluetooth_media.rs b/system/gd/rust/linux/stack/src/bluetooth_media.rs
+--- a/system/gd/rust/linux/stack/src/bluetooth_media.rs
++++ b/system/gd/rust/linux/stack/src/bluetooth_media.rs
+@@ -1654,6 +1654,14 @@
+                             self.write_data_to_listener(listener, data);
+                         }
+ 
++                        // SLC may disappear before AudioState::Disconnected (whose
++                        // address can already be cleared by the native stack). Remove
++                        // our synthetic call while its SCO and policy state still exist,
++                        // otherwise the next CIND response blocks A2DP as an active call.
++                        if matches!(self.hfp_audio_state.get(&addr),
++                            Some(BthfAudioState::Connected | BthfAudioState::Disconnecting)) {
++                            self.remove_sco_synthetic_call(addr);
++                        }
+                         self.uhid_destroy(&addr);
+                         self.hfp_states.remove(&addr);
+                         self.hfp_cap.remove(&addr);
+@@ -1719,16 +1727,7 @@
+                             });
+                         }
+ 
+-                        if self.should_insert_call_when_sco_start(addr) {
+-                            // Remove the only call related to the one added for devices requesting to force +CIEV command
+-                            self.call_list = vec![];
+-                            self.phone_state.num_active = 0;
+-                            self.phone_state_change("".into());
+-                            self.notify_telephony_event(
+-                                &addr,
+-                                TelephonyEvent::CRASRemoveActiveCall,
+-                            );
+-                        }
++                        self.remove_sco_synthetic_call(addr);
+ 
+                         self.audio_session_state(addr, true, true);
+                         // Resume the A2DP stream when a phone call ended (per MPS v1.0).
+@@ -3165,6 +3164,16 @@
+ 
+         interop_insert_call_when_sco_start(address)
+     }
++    fn remove_sco_synthetic_call(&mut self, addr: RawAddress) {
++        if !self.should_insert_call_when_sco_start(addr) {
++            return;
++        }
++        self.call_list.clear();
++        self.phone_state.num_active = 0;
++        self.phone_state_change("".into());
++        self.notify_telephony_event(&addr, TelephonyEvent::CRASRemoveActiveCall);
++    }
++
+     // Places an active call into the call list and triggers a headset update (+CIEV).
+     // Preconditions:
+     //   - No active calls in progress (phone_state.num_active == 0)

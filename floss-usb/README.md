@@ -2,8 +2,8 @@
 
 `floss-usb` replaces the USB transport for **one Realtek 0bda:c123 adapter**.
 It uses the stock `hci_vhci` module and libusb; no kernel patch or BlueZ daemon
-is involved. The service has been built and mock-tested, but has not yet been
-activated against the physical radio. Working headset calls are not yet verified.
+is involved. This Rust implementation has been built and mock-tested, but has
+not yet been activated against the physical radio. Working headset calls are not yet verified.
 
 ## Data path
 
@@ -12,10 +12,10 @@ Floss HCI user channel <-> stock virtual hci0 <-> floss-usb <-> USB radio
                                                             <-> Bluetooth headset
 ```
 
-The Rust code frames HCI packets, tracks SCO handles and connection events, and
-orders endpoint changes before reporting connection success to Floss. A small C
-libusb boundary owns asynchronous control, bulk, interrupt and isochronous
-transfers. Bluetooth profiles, pairing, keys and audio codecs remain in Floss.
+The Rust code frames HCI packets, tracks SCO handles and connection events,
+orders endpoint changes before reporting connection success to Floss, and owns
+asynchronous libusb control, bulk, interrupt and isochronous transfers through a
+small FFI boundary. Bluetooth profiles, pairing, keys and audio codecs remain in Floss.
 PipeWire continues to exchange PCM with Floss through `pw-floss`.
 
 The helper first lets the stock btusb driver initialize the controller firmware
@@ -41,7 +41,7 @@ legacy SCO Connection Complete, Disconnection Complete and host Reset packets:
   events do not stop the active SCO link. A reset cancels the old SCO transfers.
 
 Only one SCO connection is accepted. Additional connections, unsupported air
-modes, malformed/oversized packets, queue overflow and USB failures produce
+modes, malformed/oversized packets, queue overflow and unrecoverable USB failures produce
 explicit failures instead of unbounded allocation or silent data corruption.
 
 ## NixOS
@@ -87,11 +87,14 @@ the regular btusb path. This service does not modify pairing databases.
 - Rust tests cover controller selection, fragmented HCI packets, bidirectional
   CVSD/mSBC transport, command/ACL forwarding, reset, stale/duplicate events,
   failed connections and malformed input.
-- C tests execute the actual libusb callbacks and transfer builders against
-  simulated Realtek descriptors. They cover alternate settings 1/2/6, SCO
+- Rust tests execute the libusb callbacks and transfer builders against a
+  mock backend and simulated Realtek descriptors. They cover alternate settings 1/2/6, SCO
   fragmentation, control transfers, RX rearming, cancellation, bounded transfer
-  slots and short-transfer failures. libusb itself supplies transfer allocation;
-  device I/O is replaced by fixtures.
+  slots and short-transfer failures. Failure injection also covers allocation
+  errors, early event-loop wakeups, elapsed cancellation deadlines, and ISO
+  packet loss without replacing the device. Other Rust tests check SCO reassembly
+  recovery and startup poll failures. ABI tests verify the handwritten bindings
+  and allocate real libusb transfers; device I/O is replaced by fixtures.
 
 The updated Floss HFP file is separately compiled against the cached native GN
 build. Flake checks evaluate both module configurations and assert no kernel
@@ -104,3 +107,6 @@ and arbitrary vendor/controller support are outside this implementation.
 References: [Linux VHCI](https://kernel.googlesource.com/pub/scm/linux/kernel/git/stable/linux/+/refs/tags/v6.18.52/drivers/bluetooth/hci_vhci.c),
 [Linux btusb](https://kernel.googlesource.com/pub/scm/linux/kernel/git/stable/linux/+/refs/tags/v6.18.52/drivers/bluetooth/btusb.c),
 and the fetched Android Floss HFP implementation.
+
+See [the kernel comparison](KERNEL-COMPARISON.md) for behavior differences and
+the static-review fixes.

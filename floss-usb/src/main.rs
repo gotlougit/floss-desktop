@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 mod transport;
+mod usb;
 use std::{
+    cell::RefCell,
     collections::VecDeque,
     ffi::c_void,
     fs::{self, File, OpenOptions},
@@ -17,53 +19,27 @@ use std::{
     time::{Duration, Instant},
 };
 use transport::{Action, Transport};
-unsafe extern "C" {
-    fn usb_transport_open(
-        cb: unsafe extern "C" fn(*mut c_void, u8, *const u8, i32),
-        data: *mut c_void,
-    ) -> *mut c_void;
-    fn usb_transport_bus(u: *mut c_void) -> i32;
-    fn usb_transport_address(u: *mut c_void) -> i32;
-    fn usb_transport_bootstrap(index: u32) -> i32;
-    fn usb_transport_claim(u: *mut c_void) -> i32;
-    fn usb_transport_wbs_packet_size(u: *mut c_void) -> i32;
-    fn usb_transport_set_sco(u: *mut c_void, mode: i32) -> i32;
-    fn usb_transport_send(u: *mut c_void, kind: u8, data: *const u8, length: i32) -> i32;
-    fn usb_transport_pump(u: *mut c_void, ms: i32) -> i32;
-    fn usb_transport_close(u: *mut c_void);
-    fn transport_poll_fd(fd: i32, ms: i32) -> i32;
-    fn transport_install_signals();
-    fn transport_stopping() -> i32;
-}
 #[derive(Default)]
 struct Incoming {
     queue: VecDeque<(u8, Vec<u8>)>,
     bytes: usize,
     overflow: bool,
 }
-unsafe extern "C" fn receive(data: *mut c_void, kind: u8, bytes: *const u8, length: i32) {
-    // C invokes this synchronously only during pump/cancel on this same thread.
+fn receive(data: *mut c_void, kind: u8, buffer: &[u8]) {
+    // libusb invokes this synchronously only during pump/cancel on this thread.
     // The boxed queue remains allocated until all transfers have been cancelled.
-    let incoming = unsafe { &mut *(data as *mut Incoming) };
-    if !(0..=4096).contains(&length)
-        || incoming.queue.len() >= 128
-        || incoming.bytes + length as usize > 262144
+    let mut incoming = unsafe { &*(data as *const RefCell<Incoming>) }.borrow_mut();
+    if buffer.len() > 4096 || incoming.queue.len() >= 128 || incoming.bytes + buffer.len() > 262144
     {
         incoming.overflow = true;
         return;
     }
-    if length == 0 {
+    if buffer.is_empty() {
         return;
     }
-    let buffer = unsafe { std::slice::from_raw_parts(bytes, length as usize) }.to_vec();
+    let buffer = buffer.to_vec();
     incoming.bytes += buffer.len();
     incoming.queue.push_back((kind, buffer));
-}
-struct Usb(*mut c_void);
-impl Drop for Usb {
-    fn drop(&mut self) {
-        unsafe { usb_transport_close(self.0) }
-    }
 }
 fn checked(code: i32, operation: &str) -> io::Result<()> {
     if code < 0 {
@@ -119,6 +95,71 @@ fn write_record(file: &mut File, packet: &[u8]) -> io::Result<()> {
         }
     }
 }
+// Drain a bounded burst before waiting for USB events. SCO replies often arrive
+// together after one isochronous receive transfer; one packet per millisecond
+// artificially spreads that burst and can leave the USB transmit endpoint idle.
+fn queue_host(
+    reader: &mut impl Read,
+    state: &mut Transport,
+    pending: &mut VecDeque<Action>,
+) -> io::Result<()> {
+    let mut buffer = [0u8; 4097];
+    for _ in 0..32 {
+        match reader.read(&mut buffer) {
+            Ok(0) => return Err(io::Error::other("virtual HCI closed")),
+            Ok(n) => pending.extend(state.host(&buffer[..n]).map_err(io::Error::other)?),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+fn wait_registration(
+    reader: &mut impl Read,
+    mut poll: impl FnMut() -> i32,
+    mut stopping: impl FnMut() -> bool,
+    timeout: Duration,
+) -> io::Result<u16> {
+    let deadline = Instant::now() + timeout;
+    let mut buffer = [0u8; 4097];
+    loop {
+        if stopping() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "virtual HCI registration cancelled",
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "virtual-HCI registration timed out",
+            ));
+        }
+        let result = poll();
+        if result < 0 {
+            return Err(io::Error::from_raw_os_error(-result));
+        }
+        if result == 0 {
+            continue;
+        }
+        match reader.read(&mut buffer) {
+            Ok(4) if buffer[..2] == [0xff, 0] => {
+                return Ok(u16::from_le_bytes([buffer[2], buffer[3]]));
+            }
+            Ok(_) => return Err(io::Error::other("invalid virtual-HCI registration reply")),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
 fn ready() -> io::Result<()> {
     if let Some(path) = std::env::var_os("NOTIFY_SOCKET") {
         let path = path.to_string_lossy();
@@ -138,47 +179,37 @@ fn run() -> io::Result<()> {
             "floss-usb takes no arguments; supports one Realtek 0bda:c123 radio",
         ));
     }
-    unsafe { transport_install_signals() };
-    let mut incoming = Box::<Incoming>::default();
-    let ptr =
-        unsafe { usb_transport_open(receive, (&mut *incoming) as *mut Incoming as *mut c_void) };
-    if ptr.is_null() {
-        return Err(io::Error::other("cannot open supported USB controller"));
-    }
-    let usb = Usb(ptr); // Drops before the callback queue, including on errors.
-    let (bus, address) = unsafe { (usb_transport_bus(ptr), usb_transport_address(ptr)) };
+    usb::install_signals();
+    // Shared ownership of the cell keeps the callback pointer valid across main
+    // loop accesses. Drop USB first so no callback can outlive this allocation.
+    let incoming = Box::new(RefCell::new(Incoming::default()));
+    let mut usb = usb::Usb::open(receive, std::ptr::from_ref(&*incoming) as *mut c_void)?;
+    let (bus, address) = (usb.bus(), usb.address());
     let index = physical_index(bus, address)?;
     checked(
-        unsafe { usb_transport_bootstrap(index) },
+        usb::bootstrap(index),
         "kernel firmware initialization (controller must be unblocked and unused)",
     )?;
-    checked(unsafe { usb_transport_claim(ptr) }, "exclusive USB claim")?;
+    checked(usb.claim(), "exclusive USB claim")?;
     let mut vhci = OpenOptions::new()
         .read(true)
         .write(true)
         .custom_flags(0x800 | 0x80000)
         .open("/dev/vhci")?;
     write_record(&mut vhci, &[0xff, 0])?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut buffer = [0u8; 4097];
-    let virtual_index = loop {
-        if unsafe { transport_poll_fd(vhci.as_raw_fd(), 10) } > 0 {
-            let n = vhci.read(&mut buffer)?;
-            if n != 4 || buffer[..2] != [0xff, 0] {
-                return Err(io::Error::other("invalid virtual-HCI registration reply"));
-            }
-            break u16::from_le_bytes([buffer[2], buffer[3]]);
-        }
-        if Instant::now() >= deadline {
-            return Err(io::Error::other("virtual-HCI registration timed out"));
-        }
-    };
+    let fd = vhci.as_raw_fd();
+    let virtual_index = wait_registration(
+        &mut vhci,
+        || usb::poll_fd(fd, 10),
+        usb::stopping,
+        Duration::from_secs(5),
+    )?;
     if virtual_index != 0 {
         return Err(io::Error::other(format!(
             "expected virtual hci0, got hci{virtual_index}; multiple adapters are unsupported"
         )));
     }
-    let size = unsafe { usb_transport_wbs_packet_size(ptr) };
+    let size = usb.wbs_packet_size();
     let runtime = Path::new("/run/floss-usb");
     let pending = runtime.join("sco-packet-size.new");
     fs::write(&pending, format!("{size}\n"))?;
@@ -190,25 +221,27 @@ fn run() -> io::Result<()> {
     ready()?;
     let mut state = Transport::default();
     let mut pending: VecDeque<Action> = VecDeque::new();
-    while unsafe { transport_stopping() } == 0 {
-        if incoming.overflow {
-            return Err(io::Error::other("bounded USB receive queue overflow"));
-        }
-        while let Some((kind, data)) = incoming.queue.pop_front() {
-            incoming.bytes -= data.len();
-            pending.extend(state.usb(kind, &data).map_err(io::Error::other)?);
-            if pending.len() > 256 {
-                return Err(io::Error::other("bounded HCI action queue overflow"));
+    while !usb::stopping() {
+        {
+            // End this borrow before USB calls, which may invoke receive().
+            let mut incoming = incoming.borrow_mut();
+            if incoming.overflow {
+                return Err(io::Error::other("bounded USB receive queue overflow"));
+            }
+            while let Some((kind, data)) = incoming.queue.pop_front() {
+                incoming.bytes -= data.len();
+                pending.extend(state.usb(kind, &data).map_err(io::Error::other)?);
+                if pending.len() > 256 {
+                    return Err(io::Error::other("bounded HCI action queue overflow"));
+                }
             }
         }
+        let mut blocked = false;
         while let Some(action) = pending.pop_front() {
             match &action {
                 Action::Host(packet) => write_record(&mut vhci, packet)?,
                 Action::Sco(mode) => {
-                    checked(
-                        unsafe { usb_transport_set_sco(ptr, *mode as i32) },
-                        "USB SCO endpoint change",
-                    )?;
+                    checked(usb.set_sco(*mode as i32), "USB SCO endpoint change")?;
                     if *mode == 0 {
                         eprintln!(
                             "floss-usb: SCO stopped; RX {} bytes, TX {} bytes",
@@ -217,16 +250,10 @@ fn run() -> io::Result<()> {
                     }
                 }
                 Action::Usb(packet) => {
-                    let rc = unsafe {
-                        usb_transport_send(
-                            ptr,
-                            packet[0],
-                            packet[1..].as_ptr(),
-                            (packet.len() - 1) as i32,
-                        )
-                    };
+                    let rc = usb.send(packet[0], &packet[1..]);
                     if rc == -105 {
                         pending.push_front(action);
+                        blocked = true;
                         break;
                     } // bounded transfer pool backpressure
                     checked(rc, "USB transmit")?;
@@ -234,20 +261,12 @@ fn run() -> io::Result<()> {
             }
         }
         if pending.is_empty() {
-            for _ in 0..32 {
-                match vhci.read(&mut buffer) {
-                    Ok(0) => return Err(io::Error::other("virtual HCI closed")),
-                    Ok(n) => {
-                        pending.extend(state.host(&buffer[..n]).map_err(io::Error::other)?);
-                        break;
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                    Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(e) => return Err(e),
-                }
-            }
+            queue_host(&mut vhci, &mut state, &mut pending)?;
         }
-        checked(unsafe { usb_transport_pump(ptr, 1) }, "USB events")?;
+        // Do not sleep on work we can submit now. Still wait on pool exhaustion
+        // so backpressure cannot turn into a busy-spin.
+        let wait_ms = if blocked || pending.is_empty() { 1 } else { 0 };
+        checked(usb.pump(wait_ms), "USB events")?;
     }
     // Unregister virtual HCI before restoring the physical kernel driver.
     drop(vhci);
@@ -264,6 +283,122 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn receive_queue_can_be_drained_between_callbacks_and_stays_bounded() {
+        let incoming = Box::new(RefCell::new(Incoming::default()));
+        let data = std::ptr::from_ref(&*incoming) as *mut c_void;
+        receive(data, 2, &[1, 2, 3]);
+        {
+            let mut queue = incoming.borrow_mut();
+            assert_eq!(queue.queue.pop_front(), Some((2, vec![1, 2, 3])));
+            queue.bytes = 0;
+        }
+        receive(data, 4, &[]);
+        for _ in 0..128 {
+            receive(data, 3, &[7]);
+        }
+        receive(data, 3, &[8]);
+        let queue = incoming.borrow();
+        assert_eq!(queue.queue.len(), 128);
+        assert_eq!(queue.bytes, 128);
+        assert!(queue.overflow);
+    }
+    #[test]
+    fn registration_reports_poll_errors_shutdown_timeout_and_bad_records() {
+        let mut bytes = io::Cursor::new(vec![0xff, 0, 7, 0]);
+        let limit = Duration::from_secs(1);
+        let error = wait_registration(&mut bytes, || -5, || false, limit).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(5));
+        assert_eq!(bytes.position(), 0);
+        assert_eq!(
+            wait_registration(&mut bytes, || panic!("poll after shutdown"), || true, limit)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::Interrupted
+        );
+        assert_eq!(
+            wait_registration(
+                &mut bytes,
+                || panic!("poll after deadline"),
+                || false,
+                Duration::ZERO
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert_eq!(
+            wait_registration(&mut bytes, || 1, || false, limit).unwrap(),
+            7
+        );
+        let mut malformed = io::Cursor::new(vec![0xff, 0, 1]);
+        assert!(wait_registration(&mut malformed, || 1, || false, limit).is_err());
+    }
+    #[test]
+    fn registration_retries_transient_read_and_observes_stop_after_poll() {
+        struct TransientReader(bool);
+        impl Read for TransientReader {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                if !self.0 {
+                    self.0 = true;
+                    return Err(io::ErrorKind::WouldBlock.into());
+                }
+                out[..4].copy_from_slice(&[0xff, 0, 0, 0]);
+                Ok(4)
+            }
+        }
+        assert_eq!(
+            wait_registration(
+                &mut TransientReader(false),
+                || 1,
+                || false,
+                Duration::from_secs(1)
+            )
+            .unwrap(),
+            0
+        );
+        let stopped = std::cell::Cell::new(false);
+        assert_eq!(
+            wait_registration(
+                &mut io::empty(),
+                || {
+                    stopped.set(true);
+                    0
+                },
+                || stopped.get(),
+                Duration::from_secs(1)
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::Interrupted
+        );
+    }
+    struct HostBurst {
+        remaining: usize,
+    }
+    impl Read for HostBurst {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(io::ErrorKind::WouldBlock.into());
+            }
+            self.remaining -= 1;
+            out[..4].copy_from_slice(&[1, 1, 16, 0]); // Read Local Version command.
+            Ok(4)
+        }
+    }
+    #[test]
+    fn host_burst_is_drained_before_usb_wait_with_bounded_fairness() {
+        let mut state = Transport::default();
+        let mut pending = VecDeque::new();
+        let mut burst = HostBurst { remaining: 40 };
+        queue_host(&mut burst, &mut state, &mut pending).unwrap();
+        assert_eq!(pending.len(), 32);
+        assert_eq!(burst.remaining, 8);
+        pending.clear();
+        queue_host(&mut burst, &mut state, &mut pending).unwrap();
+        assert_eq!(pending.len(), 8);
+        assert_eq!(burst.remaining, 0);
+    }
     #[test]
     fn physical_controller_mapping_ignores_virtual_and_other_usb_devices() {
         let temp = std::env::temp_dir().join(format!("floss-usb-sysfs-{}", std::process::id()));

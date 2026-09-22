@@ -55,10 +55,14 @@ pkgs.llvmPackages.stdenv.mkDerivation {
     ''}
     runHook postInstall
   '';
-  doCheck = buildCodec;
-  checkPhase = pkgs.lib.optionalString buildCodec ''
+  doCheck = true;
+  checkPhase = if buildCodec then ''
     runHook preCheck
     "$CXX_OUTDIR/a2dp_vendor_mmc_encoder_test"
+    runHook postCheck
+  '' else ''
+    runHook preCheck
+    python3 ${./tests/msbc-framing.py} --source "$PWD"
     runHook postCheck
   '';
 }

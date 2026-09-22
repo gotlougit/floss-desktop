@@ -12,7 +12,12 @@ struct Framer {
     bytes: Vec<u8>,
 }
 impl Framer {
-    fn push(&mut self, kind: u8, bytes: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    fn push(
+        &mut self,
+        kind: u8,
+        bytes: &[u8],
+        sco_handle: Option<u16>,
+    ) -> Result<Vec<Vec<u8>>, String> {
         let mut result = Vec::new();
         // Parse incrementally, retaining at most one bounded incomplete frame.
         for byte in bytes {
@@ -25,6 +30,13 @@ impl Framer {
             };
             if self.bytes.len() < header {
                 continue;
+            }
+            // Like btusb_recv_isoc, reject a continuation mistaken for a new
+            // header immediately. Discard the rest of this USB fragment, not
+            // an advertised payload length from untrusted continuation bytes.
+            if kind == 3 && self.bytes.len() == header && sco_handle != Some(handle(&self.bytes)) {
+                self.bytes.clear();
+                break;
             }
             let payload = match kind {
                 2 => u16::from_le_bytes([self.bytes[2], self.bytes[3]]) as usize,
@@ -64,9 +76,9 @@ impl Transport {
             return Ok(vec![]);
         }
         let frames = match kind {
-            2 => self.acl.push(kind, bytes),
-            3 => self.sco.push(kind, bytes),
-            4 => self.event.push(kind, bytes),
+            2 => self.acl.push(kind, bytes, None),
+            3 => self.sco.push(kind, bytes, self.link.map(|link| link.0)),
+            4 => self.event.push(kind, bytes, None),
             _ => Err("invalid USB receive type".into()),
         }?;
         let mut actions = Vec::new();
@@ -157,6 +169,29 @@ impl Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn acl_music_payload_survives_usb_boundaries_exactly() {
+        // Include endpoint-sized and multi-transfer packets, with bytes that
+        // resemble HCI headers inside the opaque encoded audio payload.
+        for payload_len in [60usize, 64, 128, 679, 883, 1021, 2048, 4092] {
+            let mut packet = vec![2, 0x01, 0x20];
+            packet.extend((payload_len as u16).to_le_bytes());
+            packet.extend((0..payload_len).map(|i| (i.wrapping_mul(197) ^ (i >> 3)) as u8));
+            for chunk in [1usize, 9, 16, 64, 512, 4096] {
+                let mut t = Transport::default();
+                assert_eq!(t.host(&packet).unwrap(), vec![Action::Usb(packet.clone())]);
+                let bytes = [packet[1..].to_vec(), packet[1..].to_vec()].concat();
+                let mut output = Vec::new();
+                for fragment in bytes.chunks(chunk) {
+                    output.extend(t.usb(2, fragment).unwrap());
+                }
+                assert_eq!(
+                    output,
+                    vec![Action::Host(packet.clone()), Action::Host(packet.clone())]
+                );
+            }
+        }
+    }
     fn connected(mode: u8, id: u16) -> Vec<u8> {
         let mut event = vec![0x2c, 17, 0];
         event.extend(id.to_le_bytes());
@@ -189,6 +224,52 @@ mod tests {
             let end = t.usb(4, &disconnect(42)).unwrap();
             assert_eq!(end[0], Action::Sco(0));
         }
+    }
+    #[test]
+    fn sco_recovers_after_each_possible_missing_usb_fragment() {
+        for lost_fragment in 0..3 {
+            let mut t = Transport::default();
+            t.usb(4, &connected(3, 42)).unwrap();
+            let mut packet = vec![42, 0, 24];
+            packet.extend([0x55; 24]);
+            let expected = [vec![3], packet.clone()].concat();
+            let mut good = 0;
+            let mut damaged = 0;
+            for frame in 0..80 {
+                for (part, fragment) in packet.chunks(9).enumerate() {
+                    // Mirrors btusb/libusb dropping a single errored ISO packet.
+                    if frame == 0 && part == lost_fragment {
+                        continue;
+                    }
+                    for action in t.usb(3, fragment).unwrap() {
+                        if action == Action::Host(expected.clone()) {
+                            good += 1;
+                        } else {
+                            damaged += 1;
+                        }
+                    }
+                }
+            }
+            assert!(
+                good >= 78,
+                "lost USB fragment {lost_fragment}: {good} clean frames"
+            );
+            // A loss inside an accepted frame can damage that frame; Floss's
+            // codec/PLC handles this, as on the kernel path. Future framing
+            // must recover instead of permanently stalling or disconnecting.
+            assert!(damaged <= 1);
+            assert_eq!(t.link, Some((42, 3)));
+        }
+    }
+    #[test]
+    fn stale_sco_header_cannot_hold_reassembly_until_its_length_arrives() {
+        let mut t = Transport::default();
+        t.usb(4, &connected(3, 42)).unwrap();
+        assert!(t.usb(3, &[7, 0, 255]).unwrap().is_empty());
+        assert_eq!(
+            t.usb(3, &[42, 0x20, 1, 0x55]).unwrap(),
+            vec![Action::Host(vec![3, 42, 0x20, 1, 0x55])]
+        );
     }
     #[test]
     fn duplicates_and_unrelated_disconnects_do_not_change_sco() {

@@ -37,10 +37,19 @@ activating host Bluetooth or audio services. Run Python entry points with
   in an offline harness.
 - `test-aac-feeder.py`, `test-audioconvert-disconnect.py`, and
   `floss-properties-smoke.sh` exercise specific production control paths.
+- `test-hfp-disconnect.py` exercises production SLC cleanup when the SCO
+  disconnect callback arrives late or never arrives. It checks synthetic call
+  removal, preservation of real calls under the policy gate, and duplicate
+  teardown using stubbed native state and notifications.
 - The rfkill unit tests live in the patched Bluetooth source and operate only on
   temporary sysfs-shaped fixtures.
-- `floss-usb` runs Rust HCI/SCO tests and C/libusb transfer-fixture tests during
-  its Nix build. They use no real USB devices or virtual-HCI device nodes.
+- `floss-usb` runs Rust HCI/SCO and libusb transfer-fixture tests during its
+  Nix build. They use no real USB devices or virtual-HCI device nodes.
+- `../nix/tests/msbc-framing.py --source /path/to/patched/Bluetooth` compiles
+  the production mSBC ring buffer and checks all 60 initial frame offsets with
+  24-, 60-, and 72-byte transport packets. The native Floss build runs this
+  check too. It tests framing and buffer wraparound, not codec decoding or
+  physical microphone capture.
 
 These checks cover controlled process, IPC and codec behavior. They do not prove
 physical controller, radio, headset, kernel transport or production sandbox

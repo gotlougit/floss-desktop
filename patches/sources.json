@@ -25,8 +25,8 @@
         "files": [
           "system/gd/rust/linux/"
         ],
-        "patchBytes": 84682,
-        "patchFileHash": "sha256-VE0d14oYXD3/Q6RBBQo5wXYVUv71GAEJRVOjHtpHI7o="
+        "patchBytes": 87364,
+        "patchFileHash": "sha256-q/L5e7AUJTpf2Y3w0dqBTPXp6F36IUUdf1cGLsparnw="
       },
       {
         "patch": "bluetooth-codec-service.patch",
@@ -44,10 +44,12 @@
       {
         "patch": "bluetooth-usb-transport.patch",
         "files": [
-          "system/stack/btm/btm_sco_hfp_hal_linux.cc"
+          "system/stack/btm/btm_sco_hfp_hal_linux.cc",
+          "system/stack/btm/btm_sco_hci.cc",
+          "system/stack/test/btm/sco_hci_test.cc"
         ],
-        "patchBytes": 1825,
-        "patchFileHash": "sha256-hV/iBq7UKZy8vAS3CX2Se2kkwYnD0I4RzHdsdgUfyNk="
+        "patchBytes": 7568,
+        "patchFileHash": "sha256-17QC1kYzEdxP4XIg67TohyZT6f9CLGDq6nx3nDPZrlQ="
       }
     ]
   }
