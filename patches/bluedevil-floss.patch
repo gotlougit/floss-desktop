@@ -3329,7 +3329,7 @@ index 9e2242d9..00000000
 -    QAction *m_toggleAction;
 -};
 diff --git a/src/kcm/kcm_bluetooth.json b/src/kcm/kcm_bluetooth.json
-index 2d279840..e6f10d62 100644
+index df66346f..2596d0dc 100644
 --- a/src/kcm/kcm_bluetooth.json
 +++ b/src/kcm/kcm_bluetooth.json
 @@ -167,7 +167,6 @@
