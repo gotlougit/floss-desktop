@@ -1,8 +1,8 @@
 diff --git a/docs/rst/daemon/configuration.rst b/docs/rst/daemon/configuration.rst
-index fb94168..186adcd 100644
+index ef4de9a..5f0210c 100644
 --- a/docs/rst/daemon/configuration.rst
 +++ b/docs/rst/daemon/configuration.rst
-@@ -28,6 +28,7 @@ the various options available.
+@@ -29,6 +29,7 @@ the various options available.
     configuration/alsa.rst
     configuration/stream.rst
     configuration/bluetooth.rst
@@ -11,10 +11,10 @@ index fb94168..186adcd 100644
     configuration/access.rst
     configuration/example_fragments.rst
 diff --git a/docs/rst/daemon/configuration/alsa.rst b/docs/rst/daemon/configuration/alsa.rst
-index b0dd9da..9b9a8bc 100644
+index 683640e..e0e4e7e 100644
 --- a/docs/rst/daemon/configuration/alsa.rst
 +++ b/docs/rst/daemon/configuration/alsa.rst
-@@ -482,9 +482,8 @@ described above.
+@@ -453,9 +453,8 @@ described above.
  
  .. note::
  
@@ -28,10 +28,10 @@ index b0dd9da..9b9a8bc 100644
  
  .. _pipewire-props(7): https://docs.pipewire.org/page_man_pipewire-props_7.html
 diff --git a/docs/rst/daemon/configuration/bluetooth.rst b/docs/rst/daemon/configuration/bluetooth.rst
-index 5acb223..8b8466c 100644
+index bba59a2..8b8466c 100644
 --- a/docs/rst/daemon/configuration/bluetooth.rst
 +++ b/docs/rst/daemon/configuration/bluetooth.rst
-@@ -3,356 +3,7 @@
+@@ -3,357 +3,7 @@
  Bluetooth configuration
  =======================
  
@@ -270,7 +270,8 @@ index 5acb223..8b8466c 100644
 -the audio adapter that PipeWire attaches to every audio node - the very same
 -``priority.*``, ``session.*``, ``resample.*`` and ``channelmix.*`` properties
 -that apply to ALSA nodes and to application streams. All of them are
--documented in `pipewire-props(7)`_.
+-documented in `pipewire-props(7)`_. How WirePlumber uses ``priority.*`` is
+-described in :ref:`config_priorities`.
 -
 -The sections below are **a selection only**, covering the properties that are
 -most commonly changed on Bluetooth devices. For anything that is not listed
@@ -429,10 +430,10 @@ index 79d452d..3bf6e37 100644
  
     Video capture hardware monitors only.
 diff --git a/docs/rst/daemon/configuration/example_fragments.rst b/docs/rst/daemon/configuration/example_fragments.rst
-index f753e00..b9e9a2e 100644
+index 1093e33..731a287 100644
 --- a/docs/rst/daemon/configuration/example_fragments.rst
 +++ b/docs/rst/daemon/configuration/example_fragments.rst
-@@ -44,13 +44,12 @@ File                        Contains
+@@ -49,13 +49,12 @@ File                        Contains
  ``alsa.conf``               ALSA monitor properties and rules, ALSA MIDI
                              properties, and the ALSA-related settings.
                              See :ref:`config_alsa`.
@@ -494,10 +495,10 @@ index d06b07c..182a845 100644
  Video
  ~~~~~
 diff --git a/docs/rst/daemon/configuration/meson.build b/docs/rst/daemon/configuration/meson.build
-index 837e5af..0e240c7 100644
+index f3492bd..f8d9450 100644
 --- a/docs/rst/daemon/configuration/meson.build
 +++ b/docs/rst/daemon/configuration/meson.build
-@@ -10,6 +10,7 @@ sphinx_files += files(
+@@ -11,6 +11,7 @@ sphinx_files += files(
    'alsa.rst',
    'stream.rst',
    'bluetooth.rst',
@@ -1325,10 +1326,10 @@ index 6297f50..cf4ed46 100644
      evaluate_mute_on_device_route_changed_hook:remove ()
 diff --git a/src/scripts/device/autoswitch-bluetooth-profile.lua b/src/scripts/device/autoswitch-bluetooth-profile.lua
 deleted file mode 100644
-index f16b8cb..0000000
+index 6bc4756..0000000
 --- a/src/scripts/device/autoswitch-bluetooth-profile.lua
 +++ /dev/null
-@@ -1,648 +0,0 @@
+@@ -1,656 +0,0 @@
 --- WirePlumber
 ---
 --- Copyright © 2021 Asymptotic Inc.
@@ -1661,7 +1662,7 @@ index f16b8cb..0000000
 -        visited_link_groups [filter_link_group] = true
 -      end
 -      for filter_stream_node in node_om:iterate {
--          Constraint { "media.class", "matches", "Stream/Input/Audio", type = "pw-global" },
+-          Constraint { "bound-id", "!", peer_id, type = "gobject" },
 -          Constraint { "stream.monitor", "!", "true", type = "pw" },
 -          Constraint { "bluez5.loopback", "!", "true", type = "pw" },
 -          Constraint { "node.link-group", "=", filter_link_group, type = "pw" }
@@ -1800,8 +1801,11 @@ index f16b8cb..0000000
 -    local node_om = source:call ("get-object-manager", "node")
 -    local link = event:get_subject ()
 -    local in_stream_id = link.properties["link.input.node"]
+-    local out_node_id = link.properties["link.output.node"]
 -
--    -- Only evaluate bluetooth profiles if a capture stream was linked
+-    -- Only evaluate bluetooth profiles if a capture stream was linked, or if
+-    -- the BT loopback source node was linked to anything (e.g. a filter chain
+-    -- that gets linked after the capture stream was linked to the filter)
 -    local stream = node_om:lookup {
 -      Constraint { "media.class", "matches", "Stream/Input/Audio", type = "pw-global" },
 -      Constraint { "node.link-group", "-", type = "pw" },
@@ -1809,7 +1813,12 @@ index f16b8cb..0000000
 -      Constraint { "bluez5.loopback", "!", "true", type = "pw" },
 -      Constraint { "bound-id", "=", in_stream_id, type = "gobject" },
 -    }
--    if stream ~= nil then
+-    local bt_node = node_om:lookup {
+-      Constraint { "media.class", "matches", "Audio/Source", type = "pw-global" },
+-      Constraint { "bluez5.loopback", "=", "true", type = "pw" },
+-      Constraint { "bound-id", "=", out_node_id, type = "gobject" },
+-    }
+-    if stream ~= nil or bt_node ~= nil then
 -      capture_stream_links [link.id] = true
 -      source:call ("push-event", "evaluate-bluetooth-profiles", nil, nil)
 -    end

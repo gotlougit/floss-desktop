@@ -8,7 +8,7 @@ pkgs.stdenv.mkDerivation {
   version = "6.8.80-${builtins.substring 0 12 source.rev}";
   src = pkgs.fetchzip {
     url = "https://invent.kde.org/plasma/bluedevil/-/archive/${source.rev}/bluedevil-${source.rev}.tar.gz";
-    sha256 = "sha256-sqwakSfP2v5X5D+ZM8BLp7Y1ThQybrEe5NEdmRI5fdo=";
+    sha256 = "sha256-V87qK0ad3wdopN8uK8chmzY0khrAbfCcZ76V/GZ2rnU=";
   };
   patches = [ ../patches/bluedevil-floss.patch ];
 
