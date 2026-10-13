@@ -142,5 +142,6 @@ Floss media initialization/cleanup belongs to the daemon, not this client.
 
 Physical headset/controller support, SCO transport, reconnect timing and long
 calls still require hardware validation. LC3 voice, LE Audio, simultaneous
-headsets, AVRCP volume/media control synchronization, and active-seat arbitration
-are not implemented. A2DP stays started while graph playback is idle.
+headsets, AVRCP absolute-volume/player-metadata synchronization, and active-seat
+arbitration are not implemented. Basic AVRCP playback buttons use Floss’s uinput
+media-key device; the NixOS module grants the adapter service access to it. A2DP stays started while graph playback is idle.

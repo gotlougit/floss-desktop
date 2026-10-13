@@ -218,6 +218,19 @@ index 4695663..40c6136 100644
                  // The args are "address", "old address", "new address".
                  // https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-owner-changed
                  let (addr, old, new) = msg.get3::<String, String, String>();
+diff --git a/system/gd/rust/linux/mgmt/build.rs b/system/gd/rust/linux/mgmt/build.rs
+index 6189dd7..2b75e17 100644
+--- a/system/gd/rust/linux/mgmt/build.rs
++++ b/system/gd/rust/linux/mgmt/build.rs
+@@ -26,7 +26,7 @@ fn main() {
+     println!("cargo:rustc-link-search=native={}", target_dir.into_string().unwrap());
+ 
+     // Clang requires -lc++ instead of -lstdc++
+-    println!("cargo:rustc-link-lib=c++");
++    println!("cargo:rustc-link-lib=stdc++");
+ 
+     // When cross-compiling, pkg-config is looking for dbus at the host libdir instead of the
+     // sysroot. Adding this dependency here forces the linker to include the current sysroot's
 diff --git a/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs b/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
 index 9b22d79..07c7f97 100644
 --- a/system/gd/rust/linux/mgmt/src/bluetooth_manager.rs
@@ -325,6 +338,20 @@ index 116fa34..bdd1500 100644
      #[dbus_method("RegisterCallback")]
      fn register_callback(&mut self, callback: Box<dyn IBluetoothManagerCallback + Send>) {
          dbus_generated!()
+diff --git a/system/gd/rust/linux/mgmt/src/config_util.rs b/system/gd/rust/linux/mgmt/src/config_util.rs
+index da2f100..891ad43 100644
+--- a/system/gd/rust/linux/mgmt/src/config_util.rs
++++ b/system/gd/rust/linux/mgmt/src/config_util.rs
+@@ -168,8 +168,7 @@ pub fn check_hci_device_exists(hci: RealHciIndex) -> bool {
+ /// Get the devpath for a given hci index. This gives a stable path that can be
+ /// used to identify a device even as the hci index fluctuates.
+ pub fn get_devpath_for_hci(hci: RealHciIndex) -> Option<String> {
+-    match std::fs::canonicalize(format!("{}/hci{}/device", HCI_DEVICES_DIR, hci.to_i32()).as_str())
+-    {
++    match crate::hci_devpath::resolve(Path::new("/sys"), hci.to_i32()) {
+         Ok(p) => Some(p.into_os_string().into_string().ok()?),
+         Err(e) => {
+             log::debug!("Failed to get devpath for {} with error: {}", hci, e);
 diff --git a/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs b/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
 index d516e00..db224ef 100644
 --- a/system/gd/rust/linux/mgmt/src/iface_bluetooth_manager.rs
@@ -363,10 +390,18 @@ index d516e00..db224ef 100644
      fn register_callback(&mut self, callback: Box<dyn IBluetoothManagerCallback + Send>);
  
 diff --git a/system/gd/rust/linux/mgmt/src/lib.rs b/system/gd/rust/linux/mgmt/src/lib.rs
-index 131dd09..d48d199 100644
+index 131dd09..ff87bfd 100644
 --- a/system/gd/rust/linux/mgmt/src/lib.rs
 +++ b/system/gd/rust/linux/mgmt/src/lib.rs
-@@ -10,6 +10,7 @@ pub mod migrate;
+@@ -2,6 +2,7 @@ pub mod bluetooth_experimental_dbus;
+ pub mod bluetooth_manager;
+ pub mod bluetooth_manager_dbus;
+ pub mod config_util;
++mod hci_devpath;
+ pub mod dbus_arg;
+ pub mod dbus_iface;
+ pub mod iface_bluetooth_experimental;
+@@ -10,6 +11,7 @@ pub mod migrate;
  pub mod powerd_suspend_manager;
  pub mod service_watcher;
  pub mod state_machine;
@@ -374,6 +409,19 @@ index 131dd09..d48d199 100644
  mod time;
  
  // protoc-rust generates all modules and exports them in mod.rs
+diff --git a/system/gd/rust/linux/service/build.rs b/system/gd/rust/linux/service/build.rs
+index 5920f66..3a9a915 100644
+--- a/system/gd/rust/linux/service/build.rs
++++ b/system/gd/rust/linux/service/build.rs
+@@ -18,7 +18,7 @@ fn main() {
+     println!("cargo:rustc-link-lib=dylib=resolv");
+ 
+     // Clang requires -lc++ instead of -lstdc++
+-    println!("cargo:rustc-link-lib=c++");
++    println!("cargo:rustc-link-lib=stdc++");
+ 
+     // A few more dependencies from pkg-config. These aren't included as part of
+     // the libbluetooth-static.a
 diff --git a/system/gd/rust/linux/service/src/iface_bluetooth.rs b/system/gd/rust/linux/service/src/iface_bluetooth.rs
 index 985e7b4..06ee7dc 100644
 --- a/system/gd/rust/linux/service/src/iface_bluetooth.rs
@@ -637,7 +685,7 @@ index f326bb6..32e5f93 100644
 +    unsafe { nix::libc::_exit(0) };
  }
 diff --git a/system/gd/rust/linux/stack/src/bluetooth_media.rs b/system/gd/rust/linux/stack/src/bluetooth_media.rs
-index c8ea9bc..1a1edac 100644
+index c8ea9bc..a3bd559 100644
 --- a/system/gd/rust/linux/stack/src/bluetooth_media.rs
 +++ b/system/gd/rust/linux/stack/src/bluetooth_media.rs
 @@ -16,6 +16,8 @@ use bt_topshim::profiles::csis::{
@@ -844,7 +892,7 @@ index c8ea9bc..1a1edac 100644
                          self.hfp_cap.entry(addr).or_insert(HfpCodecFormat::CVSD);
                          self.add_connected_profile(addr, Profile::Hfp);
  
-@@ -1550,7 +1647,8 @@ impl BluetoothMedia {
+@@ -1550,16 +1647,26 @@ impl BluetoothMedia {
                              return;
                          }
  
@@ -854,7 +902,17 @@ index c8ea9bc..1a1edac 100644
                              let listener = self.hfp_audio_connection_listener.take().unwrap();
                              let data: Vec<u8> = vec![0];
                              self.write_data_to_listener(listener, data);
-@@ -1560,6 +1658,7 @@ impl BluetoothMedia {
+                         }
+ 
++                        // SLC may disappear before AudioState::Disconnected (whose
++                        // address can already be cleared by the native stack). Remove
++                        // our synthetic call while its SCO and policy state still exist,
++                        // otherwise the next CIND response blocks A2DP as an active call.
++                        if matches!(self.hfp_audio_state.get(&addr),
++                            Some(BthfAudioState::Connected | BthfAudioState::Disconnecting)) {
++                            self.remove_sco_synthetic_call(addr);
++                        }
+                         self.uhid_destroy(&addr);
                          self.hfp_states.remove(&addr);
                          self.hfp_cap.remove(&addr);
                          self.hfp_audio_state.remove(&addr);
@@ -862,7 +920,7 @@ index c8ea9bc..1a1edac 100644
                          self.rm_connected_profile(addr, Profile::Hfp, true);
                      }
                      BthfConnectionState::Connecting => {
-@@ -1586,13 +1685,15 @@ impl BluetoothMedia {
+@@ -1586,13 +1693,15 @@ impl BluetoothMedia {
  
                          self.hfp_audio_state.insert(addr, state);
  
@@ -879,7 +937,7 @@ index c8ea9bc..1a1edac 100644
                          if self.should_insert_call_when_sco_start(addr) {
                              // This triggers a +CIEV command to set the call status for HFP devices.
                              // It is required for some devices to provide sound.
-@@ -1603,16 +1704,16 @@ impl BluetoothMedia {
+@@ -1603,39 +1712,33 @@ impl BluetoothMedia {
                      BthfAudioState::Disconnected => {
                          info!("[{}]: hfp audio disconnected.", DisplayAddress(&addr));
  
@@ -900,9 +958,19 @@ index c8ea9bc..1a1edac 100644
                              self.callbacks.lock().unwrap().for_all_callbacks(|callback| {
                                  callback.on_hfp_audio_disconnected(addr);
                              });
-@@ -1629,13 +1730,16 @@ impl BluetoothMedia {
-                             );
                          }
+ 
+-                        if self.should_insert_call_when_sco_start(addr) {
+-                            // Remove the only call related to the one added for devices requesting to force +CIEV command
+-                            self.call_list = vec![];
+-                            self.phone_state.num_active = 0;
+-                            self.phone_state_change("".into());
+-                            self.notify_telephony_event(
+-                                &addr,
+-                                TelephonyEvent::CRASRemoveActiveCall,
+-                            );
+-                        }
++                        self.remove_sco_synthetic_call(addr);
  
 +                        self.audio_session_state(addr, true, true);
                          // Resume the A2DP stream when a phone call ended (per MPS v1.0).
@@ -917,7 +985,7 @@ index c8ea9bc..1a1edac 100644
                          info!("[{}]: hfp audio disconnecting.", DisplayAddress(&addr));
                      }
                  }
-@@ -2654,11 +2758,13 @@ impl BluetoothMedia {
+@@ -2654,11 +2757,13 @@ impl BluetoothMedia {
      }
  
      fn start_audio_request_impl(&mut self) -> bool {
@@ -931,7 +999,7 @@ index c8ea9bc..1a1edac 100644
          self.a2dp.suspend_audio_request();
      }
  
-@@ -2697,8 +2803,23 @@ impl BluetoothMedia {
+@@ -2697,8 +2802,23 @@ impl BluetoothMedia {
          sco_offload: bool,
          disabled_codecs: HfpCodecBitId,
      ) -> bool {
@@ -955,7 +1023,7 @@ index c8ea9bc..1a1edac 100644
          let Ok(disabled_codecs) = disabled_codecs.try_into() else {
              warn!("Can't parse disabled_codecs");
              return false;
-@@ -2707,11 +2828,15 @@ impl BluetoothMedia {
+@@ -2707,11 +2827,15 @@ impl BluetoothMedia {
              warn!("SCO connect_audio status failed");
              return false;
          }
@@ -971,7 +1039,24 @@ index c8ea9bc..1a1edac 100644
          info!("Stop sco call for {}", DisplayAddress(&addr));
          self.hfp.disconnect_audio(addr);
      }
-@@ -3457,6 +3582,7 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3040,6 +3164,16 @@ impl BluetoothMedia {
+ 
+         interop_insert_call_when_sco_start(address)
+     }
++    fn remove_sco_synthetic_call(&mut self, addr: RawAddress) {
++        if !self.should_insert_call_when_sco_start(addr) {
++            return;
++        }
++        self.call_list.clear();
++        self.phone_state.num_active = 0;
++        self.phone_state_change("".into());
++        self.notify_telephony_event(&addr, TelephonyEvent::CRASRemoveActiveCall);
++    }
++
+     // Places an active call into the call list and triggers a headset update (+CIEV).
+     // Preconditions:
+     //   - No active calls in progress (phone_state.num_active == 0)
+@@ -3457,6 +3591,7 @@ impl IBluetoothMedia for BluetoothMedia {
      }
  
      fn cleanup(&mut self) -> bool {
@@ -979,7 +1064,7 @@ index c8ea9bc..1a1edac 100644
          self.cleanup()
      }
  
-@@ -3551,6 +3677,7 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3551,6 +3686,7 @@ impl IBluetoothMedia for BluetoothMedia {
      }
  
      fn set_active_device(&mut self, addr: RawAddress) {
@@ -987,7 +1072,7 @@ index c8ea9bc..1a1edac 100644
          match self.a2dp_states.get(&addr) {
              Some(BtavConnectionState::Connected) => {
                  self.a2dp.set_active_device(addr);
-@@ -3561,6 +3688,7 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3561,6 +3697,7 @@ impl IBluetoothMedia for BluetoothMedia {
      }
  
      fn reset_active_device(&mut self) {
@@ -995,7 +1080,7 @@ index c8ea9bc..1a1edac 100644
          // During MPS tests, there might be some A2DP stream manipulation unexpected to CRAS.
          // CRAS would then attempt to reset the active device. Ignore it during test.
          if !self.is_complete_profiles_required() {
-@@ -3572,6 +3700,7 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3572,6 +3709,7 @@ impl IBluetoothMedia for BluetoothMedia {
      }
  
      fn set_hfp_active_device(&mut self, addr: RawAddress) {
@@ -1003,7 +1088,7 @@ index c8ea9bc..1a1edac 100644
          if self.hfp_states.get(&addr) == Some(&BthfConnectionState::SlcConnected) {
              self.hfp.set_active_device(addr);
          } else {
-@@ -3587,6 +3716,7 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3587,6 +3725,7 @@ impl IBluetoothMedia for BluetoothMedia {
          bits_per_sample: A2dpCodecBitsPerSample,
          channel_mode: A2dpCodecChannelMode,
      ) -> bool {
@@ -1011,7 +1096,7 @@ index c8ea9bc..1a1edac 100644
          if self.a2dp_states.get(&addr).is_none() {
              warn!(
                  "[{}]: Ignore set config event for unconnected or disconnected A2DP device",
-@@ -3676,16 +3806,128 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3676,16 +3815,128 @@ impl IBluetoothMedia for BluetoothMedia {
          self.hfp.set_volume(vol, addr);
      }
  
@@ -1073,7 +1158,7 @@ index c8ea9bc..1a1edac 100644
 +            if let Some(listener) = self.a2dp_audio_connection_listener.take() {
 +                self.write_data_to_listener(listener, vec![1]);
 +            }
-         }
++        }
 +        if !accepted {
 +            self.hfp_audio_connection_listener = None;
 +            self.a2dp_audio_connection_listener = None;
@@ -1081,7 +1166,7 @@ index c8ea9bc..1a1edac 100644
 +        }
 +        accepted
 +    }
- 
++
 +    fn stop_audio_session(&mut self, token: u64, owner: Box<dyn IBluetoothMediaCallback + Send>) -> bool {
 +        // Old tokens are safe no-ops; tokens never repeat within this daemon.
 +        if self.audio_session.as_ref().map_or(true, |s| s.token != token) { return true; }
@@ -1109,10 +1194,10 @@ index c8ea9bc..1a1edac 100644
 +        if session.hfp || !session.started || session.stopping ||
 +            self.a2dp_audio_state.get(&session.address) != Some(&BtavAudioState::Started) {
 +            return A2dpPcmConfig::default();
-+        }
+         }
 +        self.a2dp.get_pcm_config_for_peer(session.address)
 +    }
-+
+ 
 +    fn get_audio_session_position(&self, token: u64,
 +        owner: Box<dyn IBluetoothMediaCallback + Send>) -> AudioSessionPosition {
 +        if !self.session_owner(token, owner.as_ref()) { return AudioSessionPosition::default(); }
@@ -1144,7 +1229,7 @@ index c8ea9bc..1a1edac 100644
          debug!("Stop audio request");
  
          if self.a2dp_audio_connection_listener.is_some() {
-@@ -3704,15 +3946,22 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3704,15 +3955,22 @@ impl IBluetoothMedia for BluetoothMedia {
          disabled_codecs: HfpCodecBitId,
          connection_listener: File,
      ) -> bool {
@@ -1169,7 +1254,7 @@ index c8ea9bc..1a1edac 100644
          if self.hfp_audio_connection_listener.is_some() {
              warn!("stop_sco_call: replacing an unresolved listener");
          }
-@@ -3728,6 +3977,14 @@ impl IBluetoothMedia for BluetoothMedia {
+@@ -3728,6 +3986,14 @@ impl IBluetoothMedia for BluetoothMedia {
          }
      }
  
@@ -1333,6 +1418,244 @@ index 841bb51..5bbc40b 100644
      }
  
      fn listen_using_insecure_l2cap_channel(&mut self, callback: CallbackId) -> SocketResult {
+diff --git a/system/gd/rust/linux/utils/src/uinput.rs b/system/gd/rust/linux/utils/src/uinput.rs
+index 89052bb..24e1446 100644
+--- a/system/gd/rust/linux/utils/src/uinput.rs
++++ b/system/gd/rust/linux/utils/src/uinput.rs
+@@ -4,6 +4,7 @@ use libc;
+ use nix;
+ use std::ffi::CString;
+ use std::mem;
++use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+ use std::slice;
+ 
+ // Supported AVRCP Keys
+@@ -44,7 +45,7 @@ const UI_DEV_DESTROY: libc::c_ulong = nix::request_code_none!(UINPUT_IOCTL_BASE,
+ const UI_SET_EVBIT: libc::c_ulong =
+     nix::request_code_write!(UINPUT_IOCTL_BASE, 100, mem::size_of::<libc::c_int>());
+ const UI_SET_PHYS: libc::c_ulong =
+-    nix::request_code_write!(UINPUT_IOCTL_BASE, 108, mem::size_of::<libc::c_char>());
++    nix::request_code_write!(UINPUT_IOCTL_BASE, 108, mem::size_of::<*const libc::c_char>());
+ const UI_SET_KEYBIT: libc::c_ulong =
+     nix::request_code_write!(UINPUT_IOCTL_BASE, 101, mem::size_of::<libc::c_int>());
+ 
+@@ -125,7 +126,7 @@ impl UInputEvent {
+ }
+ 
+ struct UInputDev {
+-    fd: i32,
++    fd: Option<OwnedFd>,
+     addr: String,
+     device: UInputDevInfo,
+ }
+@@ -133,7 +134,7 @@ struct UInputDev {
+ impl Default for UInputDev {
+     fn default() -> Self {
+         UInputDev {
+-            fd: -1,
++            fd: None,
+             addr: String::from("00:00:00:00:00:00"),
+             device: UInputDevInfo::default(),
+         }
+@@ -164,78 +165,81 @@ impl UInputDev {
+         return 0;
+     }
+ 
+-    #[allow(temporary_cstring_as_ptr)]
+     fn init(&mut self, mut name: String, addr: String) -> Result<(), String> {
+-        // Truncate the device name if over the max size allowed.
+-        let new_len = Self::floor_char_boundary(&name, UINPUT_MAX_NAME_SIZE - UINPUT_SUFFIX_SIZE);
++        if self.fd.is_some() {
++            return Err("uinput device is already initialized".into());
++        }
++        let phys = CString::new(addr.as_str()).map_err(|_| "Invalid uinput address")?;
++        // The kernel expects a NUL-terminated UTF-8 byte string, not truncated chars.
++        let new_len = Self::floor_char_boundary(&name, UINPUT_MAX_NAME_SIZE - UINPUT_SUFFIX_SIZE - 1);
+         name.truncate(new_len);
+         name.push_str(UINPUT_SUFFIX);
+-        for (i, ch) in name.chars().enumerate() {
+-            self.device.name[i] = ch as libc::c_char;
++        self.device.name.fill(0);
++        for (dest, byte) in self.device.name.iter_mut().zip(name.bytes()) {
++            *dest = byte as libc::c_char;
+         }
+ 
+-        let mut fd = -1;
+-
+-        unsafe {
+-            for path in ["/dev/uinput", "/dev/input/uinput", "/dev/misc/uinput"] {
+-                fd = libc::open(CString::new(path).unwrap().as_ptr().cast(), libc::O_RDWR);
+-                if fd >= 0 {
+-                    break;
+-                }
++        let mut opened = None;
++        let mut open_error = None;
++        for path in ["/dev/uinput", "/dev/input/uinput", "/dev/misc/uinput"] {
++            let path = CString::new(path).unwrap();
++            let raw = unsafe { libc::open(path.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
++            if raw >= 0 {
++                opened = Some(unsafe { OwnedFd::from_raw_fd(raw) });
++                break;
+             }
+-
+-            if fd < -1 {
+-                return Err(format!(
+-                    "Failed to open uinput for {}: {}",
+-                    addr,
+-                    std::io::Error::last_os_error()
+-                ));
++            let error = std::io::Error::last_os_error();
++            // Keep the useful permission error instead of a missing legacy path.
++            if open_error.is_none() || error.kind() != std::io::ErrorKind::NotFound {
++                open_error = Some(error);
+             }
+-
+-            let device_serialized = self.device.serialize();
+-            if libc::write(
+-                fd,
+-                device_serialized.as_ptr() as *const libc::c_void,
+-                device_serialized.len(),
+-            ) < 0
+-            {
+-                libc::close(fd);
+-                return Err(format!(
+-                    "Can't write device information for {}: {}",
+-                    addr,
+-                    std::io::Error::last_os_error()
+-                ));
++        }
++        let fd = opened.ok_or_else(|| format!(
++            "Failed to open uinput for {}: {}", addr, open_error.unwrap()))?;
++        let raw = fd.as_raw_fd();
++        // fd is local until setup succeeds. Every error closes it exactly once.
++        let check = |result: libc::c_int, operation: &str| -> Result<(), String> {
++            if result < 0 {
++                Err(format!("{} for {}: {}", operation, addr, std::io::Error::last_os_error()))
++            } else {
++                Ok(())
+             }
+-
+-            libc::ioctl(fd, UI_SET_EVBIT, EV_KEY);
+-            libc::ioctl(fd, UI_SET_EVBIT, EV_REL);
+-            libc::ioctl(fd, UI_SET_EVBIT, EV_REP);
+-            libc::ioctl(fd, UI_SET_EVBIT, EV_SYN);
+-            libc::ioctl(fd, UI_SET_PHYS, addr.clone());
+-
+-            for key_map in KEY_MAP {
+-                libc::ioctl(fd, UI_SET_KEYBIT, key_map.uinput);
++        };
++        unsafe {
++            for event in [EV_KEY, EV_REL, EV_REP, EV_SYN] {
++                check(libc::ioctl(raw, UI_SET_EVBIT, event), "UI_SET_EVBIT")?;
+             }
+-
+-            if libc::ioctl(fd, UI_DEV_CREATE, 0) < 0 {
+-                libc::close(fd);
+-                return Err(format!(
+-                    "Can't create uinput device for {}: {}",
+-                    addr,
+-                    std::io::Error::last_os_error()
+-                ));
++            check(libc::ioctl(raw, UI_SET_PHYS, phys.as_ptr()), "UI_SET_PHYS")?;
++            for key_map in KEY_MAP {
++                check(libc::ioctl(raw, UI_SET_KEYBIT, key_map.uinput), "UI_SET_KEYBIT")?;
+             }
+         }
+-
+-        self.fd = fd;
++        Self::write_packet(raw, self.device.serialize())
++            .map_err(|e| format!("Can't write device information for {}: {}", addr, e))?;
++        check(unsafe { libc::ioctl(raw, UI_DEV_CREATE, 0) }, "UI_DEV_CREATE")?;
++        self.fd = Some(fd);
+         self.addr = addr;
+         Ok(())
+     }
+ 
+     fn close(&mut self) {
+-        unsafe {
+-            libc::ioctl(self.fd, UI_DEV_DESTROY, 0);
+-            libc::close(self.fd);
++        if let Some(fd) = self.fd.take() {
++            unsafe { libc::ioctl(fd.as_raw_fd(), UI_DEV_DESTROY, 0); }
++            // OwnedFd closes even if UI_DEV_DESTROY fails; repeated close is harmless.
++        }
++    }
++
++    fn write_packet(fd: i32, bytes: &[u8]) -> std::io::Result<()> {
++        loop {
++            let result = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
++            if result == bytes.len() as isize { return Ok(()); }
++            if result < 0 {
++                let error = std::io::Error::last_os_error();
++                if error.kind() == std::io::ErrorKind::Interrupted { continue; }
++                return Err(error);
++            }
++            // uinput expects whole records. Never retry a partial record as a new one.
++            return Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "Short uinput write"));
+         }
+     }
+ 
+@@ -244,20 +248,12 @@ impl UInputDev {
+         event_type: libc::c_ushort,
+         code: libc::c_ushort,
+         value: libc::c_int,
+-    ) -> i32 {
++    ) -> std::io::Result<()> {
++        let fd = self.fd.as_ref().ok_or_else(||
++            std::io::Error::new(std::io::ErrorKind::NotConnected, "uinput device is closed"))?;
+         let event =
+             UInputEvent { time: libc::timeval { tv_sec: 0, tv_usec: 0 }, event_type, code, value };
+-
+-        unsafe {
+-            let event_serialized = event.serialize();
+-            libc::write(
+-                self.fd,
+-                event_serialized.as_ptr() as *const libc::c_void,
+-                event_serialized.len(),
+-            )
+-            .try_into()
+-            .unwrap()
+-        }
++        Self::write_packet(fd.as_raw_fd(), event.serialize())
+     }
+ 
+     fn send_key(&mut self, key: u8, value: u8) -> Result<(), String> {
+@@ -273,15 +269,12 @@ impl UInputDev {
+             return Err(format!("AVRCP key: {} is not supported for device: {}", key, self.addr));
+         }
+ 
+-        if self.send_event(EV_KEY.try_into().unwrap(), uinput_key, value.into()) < 0
+-            || self.send_event(EV_SYN.try_into().unwrap(), SYN_REPORT.try_into().unwrap(), 0) < 0
+-        {
+-            return Err(format!(
+-                "Failed to send uinput event: {} for device: {}",
+-                std::io::Error::last_os_error(),
+-                self.addr
+-            ));
++        if value > 1 {
++            return Err(format!("Invalid uinput key state: {}", value));
+         }
++        self.send_event(EV_KEY.try_into().unwrap(), uinput_key, value.into())
++            .and_then(|_| self.send_event(EV_SYN.try_into().unwrap(), SYN_REPORT.try_into().unwrap(), 0))
++            .map_err(|e| format!("Failed to send uinput event for {}: {}", self.addr, e))?;
+         Ok(())
+     }
+ }
+@@ -293,14 +286,6 @@ pub struct UInput {
+     active_device: String,
+ }
+ 
+-impl Drop for UInput {
+-    fn drop(&mut self) {
+-        for device in self.devices.iter_mut() {
+-            device.close();
+-        }
+-    }
+-}
+-
+ impl Default for UInput {
+     fn default() -> Self {
+         Self { devices: Vec::<UInputDev>::new(), active_device: String::from("00:00:00:00:00:00") }
 diff --git a/system/gd/rust/linux/HFP_PCM_BRIDGE.md b/system/gd/rust/linux/HFP_PCM_BRIDGE.md
 new file mode 100644
 index 0000000..55f7a9f
@@ -1532,6 +1855,114 @@ index 0000000..55f7a9f
 +mandatory fallback. The codec service uses a private runtime directory,
 +bounded worker slots, bounded abandoned reservations, and validates AAC frame
 +sizes before transcoding. Desktop clients never call the codec service.
+diff --git a/system/gd/rust/linux/mgmt/src/hci_devpath.rs b/system/gd/rust/linux/mgmt/src/hci_devpath.rs
+new file mode 100644
+index 0000000..52ecf83
+--- /dev/null
++++ b/system/gd/rust/linux/mgmt/src/hci_devpath.rs
+@@ -0,0 +1,102 @@
++//! Device identity for physical controllers and the userspace VHCI transport.
++use std::{
++    fs, io,
++    path::{Path, PathBuf},
++};
++
++pub(crate) fn resolve(sysfs: &Path, index: i32) -> io::Result<PathBuf> {
++    if index < 0 {
++        return Err(io::Error::new(io::ErrorKind::InvalidInput, "negative HCI index"));
++    }
++    let name = format!("hci{index}");
++    let controller = sysfs.join("class/bluetooth").join(&name);
++    match fs::canonicalize(controller.join("device")) {
++        Ok(device) => Ok(device),
++        Err(error) if error.kind() == io::ErrorKind::NotFound => {
++            // VHCI has no physical parent and therefore no `device` symlink.
++            // Only accept an existing controller in the kernel's virtual tree:
++            // a missing/broken physical parent must not invent a new identity.
++            let device = fs::canonicalize(&controller)?;
++            let expected = fs::canonicalize(sysfs)?.join("devices/virtual/bluetooth").join(name);
++            if device == expected && device.is_dir() {
++                // This identity is index-based. The USB transport deliberately
++                // requires one virtual controller at hci0 across restarts.
++                Ok(device)
++            } else {
++                Err(error)
++            }
++        }
++        Err(error) => Err(error),
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{
++        os::unix::fs::symlink,
++        sync::atomic::{AtomicUsize, Ordering},
++    };
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    struct Fixture(PathBuf);
++    impl Fixture {
++        fn new() -> Self {
++            let root = std::env::temp_dir().join(format!(
++                "floss-devpath-{}-{}",
++                std::process::id(),
++                NEXT.fetch_add(1, Ordering::Relaxed)
++            ));
++            fs::create_dir(&root).unwrap();
++            fs::create_dir_all(root.join("class/bluetooth")).unwrap();
++            Self(root)
++        }
++        fn controller(&self, index: i32, location: &str) -> PathBuf {
++            let path = self.0.join(location).join(format!("hci{index}"));
++            fs::create_dir_all(&path).unwrap();
++            symlink(&path, self.0.join(format!("class/bluetooth/hci{index}"))).unwrap();
++            path
++        }
++    }
++    impl Drop for Fixture {
++        fn drop(&mut self) {
++            fs::remove_dir_all(&self.0).unwrap();
++        }
++    }
++    #[test]
++    fn physical_identity_survives_index_changes() {
++        let f = Fixture::new();
++        let parent = f.0.join("devices/usb3/3-4/3-4:1.0");
++        fs::create_dir_all(&parent).unwrap();
++        for index in [0, 2] {
++            let hci = f.controller(index, "devices/usb3/3-4/3-4:1.0/bluetooth");
++            symlink(&parent, hci.join("device")).unwrap();
++            assert_eq!(resolve(&f.0, index).unwrap(), parent);
++        }
++    }
++    #[test]
++    fn virtual_controller_without_parent_is_discovered_and_removed() {
++        let f = Fixture::new();
++        let hci = f.controller(0, "devices/virtual/bluetooth");
++        assert!(!hci.join("device").exists());
++        assert_eq!(resolve(&f.0, 0).unwrap(), hci);
++        fs::remove_dir(&hci).unwrap();
++        assert!(resolve(&f.0, 0).is_err());
++    }
++    #[test]
++    fn broken_physical_parent_is_not_accepted() {
++        let f = Fixture::new();
++        let hci = f.controller(0, "devices/usb3/bluetooth");
++        assert!(resolve(&f.0, 0).is_err());
++        symlink(f.0.join("missing"), hci.join("device")).unwrap();
++        assert!(resolve(&f.0, 0).is_err());
++    }
++    #[test]
++    fn wrong_virtual_index_and_missing_indices_are_rejected() {
++        let f = Fixture::new();
++        let hci = f.controller(1, "devices/virtual/bluetooth");
++        symlink(hci, f.0.join("class/bluetooth/hci0")).unwrap();
++        assert!(resolve(&f.0, 0).is_err());
++        assert!(resolve(&f.0, 9).is_err());
++        assert!(resolve(&f.0, -1).is_err());
++    }
++}
 diff --git a/system/gd/rust/linux/mgmt/src/rfkill.rs b/system/gd/rust/linux/mgmt/src/rfkill.rs
 new file mode 100644
 index 0000000..a2d5e02
@@ -1735,187 +2166,3 @@ index 0000000..a2d5e02
 +        assert!(!set(&fixture.0, 0, true, |_| panic!("unbounded directory write")));
 +    }
 +}
-diff --git a/system/gd/rust/linux/mgmt/src/config_util.rs b/system/gd/rust/linux/mgmt/src/config_util.rs
---- a/system/gd/rust/linux/mgmt/src/config_util.rs
-+++ b/system/gd/rust/linux/mgmt/src/config_util.rs
-@@ -168,8 +168,7 @@
- /// Get the devpath for a given hci index. This gives a stable path that can be
- /// used to identify a device even as the hci index fluctuates.
- pub fn get_devpath_for_hci(hci: RealHciIndex) -> Option<String> {
--    match std::fs::canonicalize(format!("{}/hci{}/device", HCI_DEVICES_DIR, hci.to_i32()).as_str())
--    {
-+    match crate::hci_devpath::resolve(Path::new("/sys"), hci.to_i32()) {
-         Ok(p) => Some(p.into_os_string().into_string().ok()?),
-         Err(e) => {
-             log::debug!("Failed to get devpath for {} with error: {}", hci, e);
-diff --git a/system/gd/rust/linux/mgmt/src/lib.rs b/system/gd/rust/linux/mgmt/src/lib.rs
---- a/system/gd/rust/linux/mgmt/src/lib.rs
-+++ b/system/gd/rust/linux/mgmt/src/lib.rs
-@@ -2,6 +2,7 @@
- pub mod bluetooth_manager;
- pub mod bluetooth_manager_dbus;
- pub mod config_util;
-+mod hci_devpath;
- pub mod dbus_arg;
- pub mod dbus_iface;
- pub mod iface_bluetooth_experimental;
-diff --git a/system/gd/rust/linux/mgmt/src/hci_devpath.rs b/system/gd/rust/linux/mgmt/src/hci_devpath.rs
-new file mode 100644
---- /dev/null
-+++ b/system/gd/rust/linux/mgmt/src/hci_devpath.rs
-@@ -0,0 +1,102 @@
-+//! Device identity for physical controllers and the userspace VHCI transport.
-+use std::{
-+    fs, io,
-+    path::{Path, PathBuf},
-+};
-+
-+pub(crate) fn resolve(sysfs: &Path, index: i32) -> io::Result<PathBuf> {
-+    if index < 0 {
-+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "negative HCI index"));
-+    }
-+    let name = format!("hci{index}");
-+    let controller = sysfs.join("class/bluetooth").join(&name);
-+    match fs::canonicalize(controller.join("device")) {
-+        Ok(device) => Ok(device),
-+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-+            // VHCI has no physical parent and therefore no `device` symlink.
-+            // Only accept an existing controller in the kernel's virtual tree:
-+            // a missing/broken physical parent must not invent a new identity.
-+            let device = fs::canonicalize(&controller)?;
-+            let expected = fs::canonicalize(sysfs)?.join("devices/virtual/bluetooth").join(name);
-+            if device == expected && device.is_dir() {
-+                // This identity is index-based. The USB transport deliberately
-+                // requires one virtual controller at hci0 across restarts.
-+                Ok(device)
-+            } else {
-+                Err(error)
-+            }
-+        }
-+        Err(error) => Err(error),
-+    }
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    use std::{
-+        os::unix::fs::symlink,
-+        sync::atomic::{AtomicUsize, Ordering},
-+    };
-+    static NEXT: AtomicUsize = AtomicUsize::new(0);
-+    struct Fixture(PathBuf);
-+    impl Fixture {
-+        fn new() -> Self {
-+            let root = std::env::temp_dir().join(format!(
-+                "floss-devpath-{}-{}",
-+                std::process::id(),
-+                NEXT.fetch_add(1, Ordering::Relaxed)
-+            ));
-+            fs::create_dir(&root).unwrap();
-+            fs::create_dir_all(root.join("class/bluetooth")).unwrap();
-+            Self(root)
-+        }
-+        fn controller(&self, index: i32, location: &str) -> PathBuf {
-+            let path = self.0.join(location).join(format!("hci{index}"));
-+            fs::create_dir_all(&path).unwrap();
-+            symlink(&path, self.0.join(format!("class/bluetooth/hci{index}"))).unwrap();
-+            path
-+        }
-+    }
-+    impl Drop for Fixture {
-+        fn drop(&mut self) {
-+            fs::remove_dir_all(&self.0).unwrap();
-+        }
-+    }
-+    #[test]
-+    fn physical_identity_survives_index_changes() {
-+        let f = Fixture::new();
-+        let parent = f.0.join("devices/usb3/3-4/3-4:1.0");
-+        fs::create_dir_all(&parent).unwrap();
-+        for index in [0, 2] {
-+            let hci = f.controller(index, "devices/usb3/3-4/3-4:1.0/bluetooth");
-+            symlink(&parent, hci.join("device")).unwrap();
-+            assert_eq!(resolve(&f.0, index).unwrap(), parent);
-+        }
-+    }
-+    #[test]
-+    fn virtual_controller_without_parent_is_discovered_and_removed() {
-+        let f = Fixture::new();
-+        let hci = f.controller(0, "devices/virtual/bluetooth");
-+        assert!(!hci.join("device").exists());
-+        assert_eq!(resolve(&f.0, 0).unwrap(), hci);
-+        fs::remove_dir(&hci).unwrap();
-+        assert!(resolve(&f.0, 0).is_err());
-+    }
-+    #[test]
-+    fn broken_physical_parent_is_not_accepted() {
-+        let f = Fixture::new();
-+        let hci = f.controller(0, "devices/usb3/bluetooth");
-+        assert!(resolve(&f.0, 0).is_err());
-+        symlink(f.0.join("missing"), hci.join("device")).unwrap();
-+        assert!(resolve(&f.0, 0).is_err());
-+    }
-+    #[test]
-+    fn wrong_virtual_index_and_missing_indices_are_rejected() {
-+        let f = Fixture::new();
-+        let hci = f.controller(1, "devices/virtual/bluetooth");
-+        symlink(hci, f.0.join("class/bluetooth/hci0")).unwrap();
-+        assert!(resolve(&f.0, 0).is_err());
-+        assert!(resolve(&f.0, 9).is_err());
-+        assert!(resolve(&f.0, -1).is_err());
-+    }
-+}
-diff --git a/system/gd/rust/linux/stack/src/bluetooth_media.rs b/system/gd/rust/linux/stack/src/bluetooth_media.rs
---- a/system/gd/rust/linux/stack/src/bluetooth_media.rs
-+++ b/system/gd/rust/linux/stack/src/bluetooth_media.rs
-@@ -1654,6 +1654,14 @@
-                             self.write_data_to_listener(listener, data);
-                         }
- 
-+                        // SLC may disappear before AudioState::Disconnected (whose
-+                        // address can already be cleared by the native stack). Remove
-+                        // our synthetic call while its SCO and policy state still exist,
-+                        // otherwise the next CIND response blocks A2DP as an active call.
-+                        if matches!(self.hfp_audio_state.get(&addr),
-+                            Some(BthfAudioState::Connected | BthfAudioState::Disconnecting)) {
-+                            self.remove_sco_synthetic_call(addr);
-+                        }
-                         self.uhid_destroy(&addr);
-                         self.hfp_states.remove(&addr);
-                         self.hfp_cap.remove(&addr);
-@@ -1719,16 +1727,7 @@
-                             });
-                         }
- 
--                        if self.should_insert_call_when_sco_start(addr) {
--                            // Remove the only call related to the one added for devices requesting to force +CIEV command
--                            self.call_list = vec![];
--                            self.phone_state.num_active = 0;
--                            self.phone_state_change("".into());
--                            self.notify_telephony_event(
--                                &addr,
--                                TelephonyEvent::CRASRemoveActiveCall,
--                            );
--                        }
-+                        self.remove_sco_synthetic_call(addr);
- 
-                         self.audio_session_state(addr, true, true);
-                         // Resume the A2DP stream when a phone call ended (per MPS v1.0).
-@@ -3165,6 +3164,16 @@
- 
-         interop_insert_call_when_sco_start(address)
-     }
-+    fn remove_sco_synthetic_call(&mut self, addr: RawAddress) {
-+        if !self.should_insert_call_when_sco_start(addr) {
-+            return;
-+        }
-+        self.call_list.clear();
-+        self.phone_state.num_active = 0;
-+        self.phone_state_change("".into());
-+        self.notify_telephony_event(&addr, TelephonyEvent::CRASRemoveActiveCall);
-+    }
-+
-     // Places an active call into the call list and triggers a headset update (+CIEV).
-     // Preconditions:
-     //   - No active calls in progress (phone_state.num_active == 0)

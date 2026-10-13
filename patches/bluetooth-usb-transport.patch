@@ -1,39 +1,164 @@
---- a/system/stack/btm/btm_sco_hfp_hal_linux.cc
-+++ b/system/stack/btm/btm_sco_hfp_hal_linux.cc
-@@ -297,6 +297,18 @@
-     software_hci_transport = std::strcmp(value, "true") == 0;
-   }
-   if (software_hci_transport) {
-+    // The userspace USB transport publishes the payload size of its selected
-+    // mSBC alternate setting. In particular, this Realtek adapter has no USB
-+    // alt 6: its alt 1 needs 24-byte HCI payloads, not the old fixed 60 bytes.
-+    uint8_t msbc_packet_size = 60;
-+    if (const char* size = std::getenv("FLOSS_HFP_MSBC_PACKET_SIZE")) {
-+      if (std::strcmp(size, "24") == 0) msbc_packet_size = 24;
-+      else if (std::strcmp(size, "60") == 0) msbc_packet_size = 60;
-+      else {
-+        bluetooth::log::warn("Disabling software mSBC: invalid transport packet size");
-+        msbc_packet_size = 0;
-+      }
-+    }
-     auto controller = bluetooth::shim::GetController();
-     if (controller != nullptr && controller->SupportsSco()) {
-       cached_codecs.push_back({.inner = {.codec = codec::CVSD}});
-@@ -304,8 +316,8 @@
-     // HFP mSBC T1 requires EV3 packets; the existing software codec handles
-     // framing. The explicit property asserts that the host transport carries
-     // these SCO packets; the feature bit alone cannot establish that.
--    if (controller != nullptr && controller->SupportsEv3Packets()) {
--      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = 60});
-+    if (msbc_packet_size && controller != nullptr && controller->SupportsEv3Packets()) {
-+      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = msbc_packet_size});
-     }
-     bluetooth::log::warn("Using explicitly enabled software HCI SCO transport; "
-                          "kernel USB transport support must be verified separately");
 diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
+index aef34f6..9a2c2a3 100644
 --- a/system/stack/btm/btm_sco_hci.cc
 +++ b/system/stack/btm/btm_sco_hci.cc
-@@ -270,7 +270,9 @@
+@@ -20,16 +20,20 @@
+ #include <grp.h>
+ #include <math.h>
+ #include <sys/stat.h>
++#include <sys/socket.h>
+ #include <unistd.h>
+ 
+ #include <cfloat>
++#include <cerrno>
+ #include <memory>
++#include <mutex>
+ 
+ #include "bta/ag/bta_ag_int.h"
+ #include "btif/include/core_callbacks.h"
+ #include "btif/include/stack_manager_t.h"
+ #include "osi/include/allocator.h"
+ #include "stack/btm/btm_sco.h"
++#include "stack/include/main_thread.h"
+ #include "udrv/include/uipc.h"
+ 
+ /* Per Bluetooth Core v5.0 and HFP 1.9 specification. */
+@@ -70,6 +74,26 @@
+ namespace {
+ 
+ std::unique_ptr<tUIPC_STATE> sco_uipc = nullptr;
++std::mutex sco_pcm_mutex;
++bluetooth::audio::sco::PcmConfig sco_pcm_config;
++RawAddress sco_pcm_address = RawAddress::kEmpty;
++bool sco_socket_open = false;
++// UIPC callbacks may run on its worker. Publish invalidation under the snapshot
++// lock, then marshal teardown onto the stack thread. Never acquire UIPC while
++// holding this mutex: cleanup joins its worker.
++void fail_transport() {
++  RawAddress address;
++  uint64_t generation;
++  {
++    std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++    if (sco_pcm_address.IsEmpty() || !sco_pcm_config.ready) return;
++    address = sco_pcm_address;
++    sco_pcm_config.ready = false;
++    generation = ++sco_pcm_config.generation;
++  }
++  do_in_main_thread(base::BindOnce(
++      &bluetooth::audio::sco::disconnect_failed_transport, address, generation));
++}
+ 
+ void sco_data_cb(tUIPC_CH_ID, tUIPC_EVENT event) {
+   switch (event) {
+@@ -82,6 +106,9 @@ void sco_data_cb(tUIPC_CH_ID, tUIPC_EVENT event) {
+       UIPC_Ioctl(*sco_uipc, UIPC_CH_ID_AV_AUDIO, UIPC_SET_READ_POLL_TMO,
+                  reinterpret_cast<void*>(SCO_DATA_READ_POLL_MS));
+       break;
++    case UIPC_CLOSE_EVT:
++      fail_transport();
++      break;
+     default:
+       break;
+   }
+@@ -107,7 +134,12 @@ void open() {
+     return;
+   }
+ 
+-  UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb, SCO_HOST_DATA_PATH);
++  sco_socket_open = UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb,
++                              SCO_HOST_DATA_PATH);
++  if (!sco_socket_open) {
++    log::error("failed to open SCO PCM socket");
++    return;
++  }
+   struct group* grp = getgrnam(SCO_HOST_DATA_GROUP);
+   chmod(SCO_HOST_DATA_PATH, 0770);
+   if (grp) {
+@@ -118,7 +150,47 @@ void open() {
+   }
+ }
+ 
++bool open_for_codec(const RawAddress& address, uint32_t codec) {
++  // Closing the previous socket prevents reusing a connection after a codec
++  // change. Only advertise a PCM format once the new listener actually exists.
++  open();
++  // Exclude the UIPC worker's close callback while publishing readiness.
++  // Never hold the snapshot lock across open()/cleanup(), which joins it.
++  std::unique_lock<std::recursive_mutex> channel_lock;
++  if (sco_uipc) channel_lock = std::unique_lock<std::recursive_mutex>(sco_uipc->mutex);
++  std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++  ++sco_pcm_config.generation;
++  sco_pcm_address = address;
++  sco_pcm_config.codec = codec;
++  switch (codec) {
++    case 1: sco_pcm_config.sample_rate = 8000; break;
++    case 2: sco_pcm_config.sample_rate = 16000; break;
++    case 4: sco_pcm_config.sample_rate = 32000; break;
++    default: sco_pcm_config.sample_rate = 0; break;
++  }
++  sco_pcm_config.ready = sco_socket_open && sco_uipc &&
++      sco_uipc->ch[UIPC_CH_ID_AV_AUDIO].srvfd >= 0 && sco_pcm_config.sample_rate != 0;
++  return sco_pcm_config.ready;
++}
++
++PcmConfig get_pcm_config(const RawAddress& address) {
++  std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++  if (address != sco_pcm_address || !sco_pcm_config.ready) {
++    return {.generation = sco_pcm_config.generation};
++  }
++  return sco_pcm_config;
++}
++
+ void cleanup() {
++  {
++    std::lock_guard<std::mutex> lock(sco_pcm_mutex);
++    ++sco_pcm_config.generation;
++    sco_pcm_config.ready = false;
++    sco_pcm_config.sample_rate = 0;
++    sco_pcm_config.codec = 0;
++    sco_pcm_address = RawAddress::kEmpty;
++  }
++  sco_socket_open = false;
+   if (sco_uipc == nullptr) {
+     return;
+   }
+@@ -139,7 +211,34 @@ size_t write(const uint8_t* p_buf, uint32_t len) {
+     log::warn("Write to uninitialized or closed UIPC");
+     return 0;
+   }
+-  return UIPC_Send(*sco_uipc, UIPC_CH_ID_AV_AUDIO, 0, p_buf, len) ? len : 0;
++  {
++    std::lock_guard<std::mutex> pcm_lock(sco_pcm_mutex);
++    if (!sco_pcm_config.ready) {
++      return 0;
++    }
++  }
++  // SCO receive handling also clocks SCO transmit. Never let an audio client
++  // that stopped draining its microphone block the Bluetooth stack thread.
++  // UIPC_Send is a blocking legacy API and does not detect short writes.
++  std::lock_guard<std::recursive_mutex> lock(sco_uipc->mutex);
++  const int fd = sco_uipc->ch[UIPC_CH_ID_AV_AUDIO].fd;
++  if (fd < 0) {
++    return 0;  // The audio server has not connected to the listener yet.
++  }
++  ssize_t sent;
++  do {
++    sent = send(fd, p_buf, len, MSG_DONTWAIT | MSG_NOSIGNAL);
++  } while (sent < 0 && errno == EINTR);
++  if (sent == static_cast<ssize_t>(len)) {
++    return len;
++  }
++  // A short write may end in the middle of an S16 sample. End this transport
++  // incarnation instead of following it with a new frame and corrupting PCM.
++  // The peer sees EOF and must stop/restart SCO; no partial frame is retried.
++  shutdown(fd, SHUT_RDWR);
++  fail_transport();
++  log::warn("SCO PCM client stopped draining audio; closed transport");
++  return 0;
+ }
+ #else
+ void open() {}
+@@ -171,7 +270,9 @@ static const uint8_t btm_h2_header_frames_count[] = {0x08, 0x38, 0xc8, 0xf8};
  constexpr size_t btm_wbs_supported_pkt_size[] = {BTM_MSBC_PKT_LEN, 72, 24, 0};
  /* Buffer size should be set to least common multiple of SCO packet size and
   * BTM_MSBC_PKT_LEN for optimizing buffer copy. */
@@ -44,7 +169,7 @@ diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
  
  /* The pre-computed SCO packet per HFP 1.7 spec. This mSBC packet will be
   * decoded into all-zero input PCM. */
-@@ -707,7 +709,8 @@
+@@ -608,7 +709,8 @@ public:
      return input.size();
    }
  
@@ -54,7 +179,7 @@ diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
      if (read_corrupted) {
        read_corrupted = false;
        return nullptr;
-@@ -715,10 +718,13 @@
+@@ -616,10 +718,13 @@ public:
  
      size_t rp = 0;
      size_t data_len = decode_buf_data_len();
@@ -72,12 +197,10 @@ diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
          rp++;
          continue;
        }
-@@ -726,6 +732,15 @@
-       if (rp != 0) {
-         log::warn("Skipped {} bytes of mSBC data ahead of a valid mSBC frame", rp);
+@@ -629,6 +734,15 @@ public:
          incr_buf_offset(decode_buf_ro, decode_buf_ro_mirror, buf_size, rp);
-+      }
-+
+       }
+ 
 +      // A valid header (or prefix) can arrive before the rest of its frame.
 +      // Preserve it until the next transport packet instead of consuming 60
 +      // bytes as loss concealment, which can keep 24-byte traffic permanently
@@ -85,10 +208,12 @@ diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
 +      if (available < BTM_MSBC_PKT_LEN) {
 +        *incomplete = true;
 +        return nullptr;
-       }
- 
++      }
++
        // Get the frame head.
-@@ -850,6 +865,7 @@
+       if (buf_size - decode_buf_ro >= BTM_MSBC_PKT_LEN) {
+         return &msbc_decode_buf[decode_buf_ro];
+@@ -751,6 +865,7 @@ bool enqueue_packet(const std::vector<uint8_t>& data, bool corrupted) {
  
  size_t decode(const uint8_t** out_data) {
    const uint8_t* frame_head = nullptr;
@@ -96,7 +221,7 @@ diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
  
    if (msbc_info == nullptr) {
      log::warn("mSBC buffer uninitialized or cleaned");
-@@ -865,7 +881,10 @@
+@@ -766,7 +881,10 @@ size_t decode(const uint8_t** out_data) {
      return 0;
    }
  
@@ -108,10 +233,102 @@ diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
    if (frame_head == nullptr) {
      /* Done with parsing the raw bytes just read. If we couldn't find a valid
       * mSBC frame head, we shall treat the existing BTM_MSBC_PKT_LEN length
+diff --git a/system/stack/btm/btm_sco_hfp_hal_linux.cc b/system/stack/btm/btm_sco_hfp_hal_linux.cc
+index 9ca8396..0b782ca 100644
+--- a/system/stack/btm/btm_sco_hfp_hal_linux.cc
++++ b/system/stack/btm/btm_sco_hfp_hal_linux.cc
+@@ -20,6 +20,8 @@
+ #include <unistd.h>
+ 
+ #include <vector>
++#include <cstdlib>
++#include <cstring>
+ 
+ #include "hci/controller_interface.h"
+ #include "main/shim/entry.h"
+@@ -36,6 +38,7 @@ namespace hfp_hal_interface {
+ namespace {
+ bool offload_supported = false;
+ bool offload_enabled = false;
++bool software_hci_transport = false;
+ 
+ typedef struct cached_codec_info {
+   struct bt_codec inner;
+@@ -279,6 +282,48 @@ int mgmt_notify_sco_connection_change(int fd, int hci, RawAddress device, bool i
+ }  // namespace
+ 
+ void init() {
++  cached_codecs.clear();
++  offload_supported = false;
++  offload_enabled = false;
++#ifdef TARGET_FLOSS
++  // Explicit transport opt-in. This avoids the ChromeOS-specific management
++  // commands, but does not teach a stock USB driver to configure isochronous
++  // endpoints while the controller is owned through HCI_CHANNEL_USER.
++  software_hci_transport =
++          osi_property_get_bool("bluetooth.hfp.software_hci_transport.enabled", false);
++  // Linux/ChromeOS properties are process-local. Let the service deployment
++  // opt in explicitly without adding an unrestricted property-setting API.
++  if (const char* value = std::getenv("FLOSS_HFP_SOFTWARE_HCI_TRANSPORT")) {
++    software_hci_transport = std::strcmp(value, "true") == 0;
++  }
++  if (software_hci_transport) {
++    // The userspace USB transport publishes the payload size of its selected
++    // mSBC alternate setting. In particular, this Realtek adapter has no USB
++    // alt 6: its alt 1 needs 24-byte HCI payloads, not the old fixed 60 bytes.
++    uint8_t msbc_packet_size = 60;
++    if (const char* size = std::getenv("FLOSS_HFP_MSBC_PACKET_SIZE")) {
++      if (std::strcmp(size, "24") == 0) msbc_packet_size = 24;
++      else if (std::strcmp(size, "60") == 0) msbc_packet_size = 60;
++      else {
++        bluetooth::log::warn("Disabling software mSBC: invalid transport packet size");
++        msbc_packet_size = 0;
++      }
++    }
++    auto controller = bluetooth::shim::GetController();
++    if (controller != nullptr && controller->SupportsSco()) {
++      cached_codecs.push_back({.inner = {.codec = codec::CVSD}});
++    }
++    // HFP mSBC T1 requires EV3 packets; the existing software codec handles
++    // framing. The explicit property asserts that the host transport carries
++    // these SCO packets; the feature bit alone cannot establish that.
++    if (msbc_packet_size && controller != nullptr && controller->SupportsEv3Packets()) {
++      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = msbc_packet_size});
++    }
++    bluetooth::log::warn("Using explicitly enabled software HCI SCO transport; "
++                         "kernel USB transport support must be verified separately");
++    return;
++  }
++#endif
+   int hci = GetAdapterIndex();
+   int fd = btsocket_open_mgmt(hci);
+   if (fd < 0) {
+@@ -331,6 +376,10 @@ bool get_wbs_supported() {
+ // Check if super-wideband speech is supported on local device
+ bool get_swb_supported() {
+ #ifdef TARGET_FLOSS
++  // Initial standard-HCI mode is deliberately limited to CVSD and mSBC.
++  if (software_hci_transport) {
++    return false;
++  }
+   // We only support SWB via transparent mode.
+   return is_coding_format_supported(ESCO_CODING_FORMAT_TRANSPNT);
+ #else
+@@ -455,6 +504,9 @@ size_t get_packet_size(int codec) {
+ }
+ 
+ void notify_sco_connection_change(RawAddress device, bool is_connected, int codec) {
++  if (software_hci_transport) {
++    return;
++  }
+   int hci = GetAdapterIndex();
+   int fd = btsocket_open_mgmt(hci);
+   if (fd < 0) {
 diff --git a/system/stack/test/btm/sco_hci_test.cc b/system/stack/test/btm/sco_hci_test.cc
+index 0311ebc..d2ec03f 100644
 --- a/system/stack/test/btm/sco_hci_test.cc
 +++ b/system/stack/test/btm/sco_hci_test.cc
-@@ -189,6 +189,8 @@
+@@ -189,6 +189,8 @@ TEST_F(ScoHciWbsWithInitCleanTest, WbsEnqueuePacket) {
      payload.push_back(0);
    }
    ASSERT_EQ(bluetooth::audio::sco::wbs::enqueue_packet(payload, false), true);
@@ -120,12 +337,10 @@ diff --git a/system/stack/test/btm/sco_hci_test.cc b/system/stack/test/btm/sco_h
    // Return 0 if buffer is full
    ASSERT_EQ(bluetooth::audio::sco::wbs::enqueue_packet(payload, false), false);
  }
-@@ -285,6 +287,35 @@
-   // No remaining data to decode
-   ASSERT_EQ(bluetooth::audio::sco::swb::decode(&decoded), size_t(0));
+@@ -287,6 +289,35 @@ TEST_F(ScoHciSwbWithInitCleanTest, SwbDecode) {
    ASSERT_EQ(decoded, nullptr);
-+}
-+
+ }
+ 
 +TEST_F(ScoHciWbsTest, WbsDecodeEveryInitialAlignment) {
 +  for (size_t packet_size : {24u, 60u, 72u}) {
 +    for (size_t prefix = 0; prefix < 60; ++prefix) {
@@ -153,10 +368,12 @@ diff --git a/system/stack/test/btm/sco_hci_test.cc b/system/stack/test/btm/sco_h
 +      bluetooth::audio::sco::wbs::cleanup();
 +    }
 +  }
- }
- 
++}
++
  TEST_F(ScoHciWbsTest, WbsDecodeWithIrregularOffset) {
-@@ -412,6 +443,7 @@
+   for (auto [pkt_size, buf_size] : irregular_packet_to_buffer_size) {
+     ASSERT_EQ(buf_size % pkt_size, 0u);
+@@ -412,6 +443,7 @@ TEST_F(ScoHciWbsWithInitCleanTest, WbsEncode) {
    ASSERT_EQ(bluetooth::audio::sco::wbs::encode(data, sizeof(data) - 1), size_t(0));
    ASSERT_EQ(bluetooth::audio::sco::wbs::encode(data, sizeof(data)), sizeof(data));
  

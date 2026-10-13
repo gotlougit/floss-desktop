@@ -3,8 +3,8 @@
     "url": "https://invent.kde.org/plasma/bluedevil.git",
     "rev": "60e4024b32fbf8143b6414efe6b157c8e26e68b5",
     "patch": "bluedevil-floss.patch",
-    "patchFileHash": "sha256-oCHXsmnMA46kSgbd9FCN9xTqLhxYkDu2D/RDYSQ5d4E=",
-    "patchBytes": 485601
+    "patchFileHash": "sha256-0ahbZO70Q/VLa+0OldKQY1C7D1Cu+lda7zwPGoaY3z4=",
+    "patchBytes": 485668
   },
   "wireplumber": {
     "url": "https://gitlab.freedesktop.org/pipewire/wireplumber.git",
@@ -17,16 +17,16 @@
     "url": "https://android.googlesource.com/platform/packages/modules/Bluetooth",
     "rev": "745ee92b87ed62b5a8a1bac47d5df8cad623bf59",
     "patch": "bluetooth-floss.patch",
-    "patchFileHash": "sha256-tBjFfVzEDUVz9Ne3TJJTs6a8B/3SsKWtzgZem4Z3lXA=",
-    "patchBytes": 122558,
+    "patchFileHash": "sha256-ioF+DjSh/PBdvko4eJd3lZGdxHqN2szb/jiMYawr+Lc=",
+    "patchBytes": 115092,
     "extraPatches": [
       {
         "patch": "bluetooth-service-runtime.patch",
         "files": [
           "system/gd/rust/linux/"
         ],
-        "patchBytes": 87364,
-        "patchFileHash": "sha256-q/L5e7AUJTpf2Y3w0dqBTPXp6F36IUUdf1cGLsparnw="
+        "patchBytes": 97192,
+        "patchFileHash": "sha256-KhmfQmFb97wBQYKhT7TChRSSqMhj7CRokBZlA0hHfMs="
       },
       {
         "patch": "bluetooth-codec-service.patch",
@@ -48,8 +48,8 @@
           "system/stack/btm/btm_sco_hci.cc",
           "system/stack/test/btm/sco_hci_test.cc"
         ],
-        "patchBytes": 7568,
-        "patchFileHash": "sha256-17QC1kYzEdxP4XIg67TohyZT6f9CLGDq6nx3nDPZrlQ="
+        "patchBytes": 15381,
+        "patchFileHash": "sha256-ZGuo2HSCbDulryF2cIzoVCwPxX50JnR7vRf06rKzzQo="
       }
     ]
   }

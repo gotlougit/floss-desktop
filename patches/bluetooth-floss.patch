@@ -1059,6 +1059,42 @@ index ae3f1b0..910f6f4 100644
      #[log_args]
      pub fn new(intf: &BluetoothInterface) -> Hfp {
          let hfpif: cxx::UniquePtr<ffi::HfpIntf>;
+diff --git a/system/osi/include/config.h b/system/osi/include/config.h
+index f0a0e64..9d508b8 100644
+--- a/system/osi/include/config.h
++++ b/system/osi/include/config.h
+@@ -17,6 +17,7 @@
+ // - All strings are case sensitive.
+ 
+ #include <stdbool.h>
++#include <stdint.h>
+ 
+ #include <list>
+ #include <memory>
+diff --git a/system/packet/base/iterator.h b/system/packet/base/iterator.h
+index 23d69f1..2e240e5 100644
+--- a/system/packet/base/iterator.h
++++ b/system/packet/base/iterator.h
+@@ -16,6 +16,7 @@
+ 
+ #pragma once
+ 
++#include <cstdint>
+ #include <iterator>
+ #include <memory>
+ 
+diff --git a/system/packet/base/packet_builder.h b/system/packet/base/packet_builder.h
+index 37d4a5f..ef29d51 100644
+--- a/system/packet/base/packet_builder.h
++++ b/system/packet/base/packet_builder.h
+@@ -16,6 +16,7 @@
+ 
+ #pragma once
+ 
++#include <cstdint>
+ #include <memory>
+ 
+ namespace bluetooth {
 diff --git a/system/stack/BUILD.gn b/system/stack/BUILD.gn
 index d078d1b..e268082 100644
 --- a/system/stack/BUILD.gn
@@ -2705,6 +2741,19 @@ index 2401619..064efb4 100644
 +          "%zu\n",
 +          stats->media_read_total_expected_read_bytes, stats->media_read_total_actual_read_bytes);
  }
+diff --git a/system/stack/btm/btm_ble_scanner.cc b/system/stack/btm/btm_ble_scanner.cc
+index be44ee2..ce9885d 100644
+--- a/system/stack/btm/btm_ble_scanner.cc
++++ b/system/stack/btm/btm_ble_scanner.cc
+@@ -16,6 +16,8 @@
+ 
+ #include <bluetooth/log.h>
+ 
++#include <mutex>
++
+ #include "ble_scanner.h"
+ #include "ble_scanner_hci_interface.h"
+ #include "stack/btm/btm_ble_int.h"
 diff --git a/system/stack/btm/btm_sco.cc b/system/stack/btm/btm_sco.cc
 index c48b321..0dc5912 100644
 --- a/system/stack/btm/btm_sco.cc
@@ -2772,245 +2821,6 @@ index ab55e78..56cd0c7 100644
  /* Clean up the socket when the SCO connection is done */
  void cleanup();
  
-diff --git a/system/stack/btm/btm_sco_hci.cc b/system/stack/btm/btm_sco_hci.cc
-index aef34f6..6e37b85 100644
---- a/system/stack/btm/btm_sco_hci.cc
-+++ b/system/stack/btm/btm_sco_hci.cc
-@@ -20,16 +20,20 @@
- #include <grp.h>
- #include <math.h>
- #include <sys/stat.h>
-+#include <sys/socket.h>
- #include <unistd.h>
- 
- #include <cfloat>
-+#include <cerrno>
- #include <memory>
-+#include <mutex>
- 
- #include "bta/ag/bta_ag_int.h"
- #include "btif/include/core_callbacks.h"
- #include "btif/include/stack_manager_t.h"
- #include "osi/include/allocator.h"
- #include "stack/btm/btm_sco.h"
-+#include "stack/include/main_thread.h"
- #include "udrv/include/uipc.h"
- 
- /* Per Bluetooth Core v5.0 and HFP 1.9 specification. */
-@@ -70,6 +74,26 @@
- namespace {
- 
- std::unique_ptr<tUIPC_STATE> sco_uipc = nullptr;
-+std::mutex sco_pcm_mutex;
-+bluetooth::audio::sco::PcmConfig sco_pcm_config;
-+RawAddress sco_pcm_address = RawAddress::kEmpty;
-+bool sco_socket_open = false;
-+// UIPC callbacks may run on its worker. Publish invalidation under the snapshot
-+// lock, then marshal teardown onto the stack thread. Never acquire UIPC while
-+// holding this mutex: cleanup joins its worker.
-+void fail_transport() {
-+  RawAddress address;
-+  uint64_t generation;
-+  {
-+    std::lock_guard<std::mutex> lock(sco_pcm_mutex);
-+    if (sco_pcm_address.IsEmpty() || !sco_pcm_config.ready) return;
-+    address = sco_pcm_address;
-+    sco_pcm_config.ready = false;
-+    generation = ++sco_pcm_config.generation;
-+  }
-+  do_in_main_thread(base::BindOnce(
-+      &bluetooth::audio::sco::disconnect_failed_transport, address, generation));
-+}
- 
- void sco_data_cb(tUIPC_CH_ID, tUIPC_EVENT event) {
-   switch (event) {
-@@ -82,6 +106,9 @@ void sco_data_cb(tUIPC_CH_ID, tUIPC_EVENT event) {
-       UIPC_Ioctl(*sco_uipc, UIPC_CH_ID_AV_AUDIO, UIPC_SET_READ_POLL_TMO,
-                  reinterpret_cast<void*>(SCO_DATA_READ_POLL_MS));
-       break;
-+    case UIPC_CLOSE_EVT:
-+      fail_transport();
-+      break;
-     default:
-       break;
-   }
-@@ -107,7 +134,12 @@ void open() {
-     return;
-   }
- 
--  UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb, SCO_HOST_DATA_PATH);
-+  sco_socket_open = UIPC_Open(*sco_uipc, UIPC_CH_ID_AV_AUDIO, sco_data_cb,
-+                              SCO_HOST_DATA_PATH);
-+  if (!sco_socket_open) {
-+    log::error("failed to open SCO PCM socket");
-+    return;
-+  }
-   struct group* grp = getgrnam(SCO_HOST_DATA_GROUP);
-   chmod(SCO_HOST_DATA_PATH, 0770);
-   if (grp) {
-@@ -118,7 +150,47 @@ void open() {
-   }
- }
- 
-+bool open_for_codec(const RawAddress& address, uint32_t codec) {
-+  // Closing the previous socket prevents reusing a connection after a codec
-+  // change. Only advertise a PCM format once the new listener actually exists.
-+  open();
-+  // Exclude the UIPC worker's close callback while publishing readiness.
-+  // Never hold the snapshot lock across open()/cleanup(), which joins it.
-+  std::unique_lock<std::recursive_mutex> channel_lock;
-+  if (sco_uipc) channel_lock = std::unique_lock<std::recursive_mutex>(sco_uipc->mutex);
-+  std::lock_guard<std::mutex> lock(sco_pcm_mutex);
-+  ++sco_pcm_config.generation;
-+  sco_pcm_address = address;
-+  sco_pcm_config.codec = codec;
-+  switch (codec) {
-+    case 1: sco_pcm_config.sample_rate = 8000; break;
-+    case 2: sco_pcm_config.sample_rate = 16000; break;
-+    case 4: sco_pcm_config.sample_rate = 32000; break;
-+    default: sco_pcm_config.sample_rate = 0; break;
-+  }
-+  sco_pcm_config.ready = sco_socket_open && sco_uipc &&
-+      sco_uipc->ch[UIPC_CH_ID_AV_AUDIO].srvfd >= 0 && sco_pcm_config.sample_rate != 0;
-+  return sco_pcm_config.ready;
-+}
-+
-+PcmConfig get_pcm_config(const RawAddress& address) {
-+  std::lock_guard<std::mutex> lock(sco_pcm_mutex);
-+  if (address != sco_pcm_address || !sco_pcm_config.ready) {
-+    return {.generation = sco_pcm_config.generation};
-+  }
-+  return sco_pcm_config;
-+}
-+
- void cleanup() {
-+  {
-+    std::lock_guard<std::mutex> lock(sco_pcm_mutex);
-+    ++sco_pcm_config.generation;
-+    sco_pcm_config.ready = false;
-+    sco_pcm_config.sample_rate = 0;
-+    sco_pcm_config.codec = 0;
-+    sco_pcm_address = RawAddress::kEmpty;
-+  }
-+  sco_socket_open = false;
-   if (sco_uipc == nullptr) {
-     return;
-   }
-@@ -139,7 +211,34 @@ size_t write(const uint8_t* p_buf, uint32_t len) {
-     log::warn("Write to uninitialized or closed UIPC");
-     return 0;
-   }
--  return UIPC_Send(*sco_uipc, UIPC_CH_ID_AV_AUDIO, 0, p_buf, len) ? len : 0;
-+  {
-+    std::lock_guard<std::mutex> pcm_lock(sco_pcm_mutex);
-+    if (!sco_pcm_config.ready) {
-+      return 0;
-+    }
-+  }
-+  // SCO receive handling also clocks SCO transmit. Never let an audio client
-+  // that stopped draining its microphone block the Bluetooth stack thread.
-+  // UIPC_Send is a blocking legacy API and does not detect short writes.
-+  std::lock_guard<std::recursive_mutex> lock(sco_uipc->mutex);
-+  const int fd = sco_uipc->ch[UIPC_CH_ID_AV_AUDIO].fd;
-+  if (fd < 0) {
-+    return 0;  // The audio server has not connected to the listener yet.
-+  }
-+  ssize_t sent;
-+  do {
-+    sent = send(fd, p_buf, len, MSG_DONTWAIT | MSG_NOSIGNAL);
-+  } while (sent < 0 && errno == EINTR);
-+  if (sent == static_cast<ssize_t>(len)) {
-+    return len;
-+  }
-+  // A short write may end in the middle of an S16 sample. End this transport
-+  // incarnation instead of following it with a new frame and corrupting PCM.
-+  // The peer sees EOF and must stop/restart SCO; no partial frame is retried.
-+  shutdown(fd, SHUT_RDWR);
-+  fail_transport();
-+  log::warn("SCO PCM client stopped draining audio; closed transport");
-+  return 0;
- }
- #else
- void open() {}
-diff --git a/system/stack/btm/btm_sco_hfp_hal_linux.cc b/system/stack/btm/btm_sco_hfp_hal_linux.cc
-index 9ca8396..e2d6ae9 100644
---- a/system/stack/btm/btm_sco_hfp_hal_linux.cc
-+++ b/system/stack/btm/btm_sco_hfp_hal_linux.cc
-@@ -20,6 +20,8 @@
- #include <unistd.h>
- 
- #include <vector>
-+#include <cstdlib>
-+#include <cstring>
- 
- #include "hci/controller_interface.h"
- #include "main/shim/entry.h"
-@@ -36,6 +38,7 @@ namespace hfp_hal_interface {
- namespace {
- bool offload_supported = false;
- bool offload_enabled = false;
-+bool software_hci_transport = false;
- 
- typedef struct cached_codec_info {
-   struct bt_codec inner;
-@@ -279,6 +282,36 @@ int mgmt_notify_sco_connection_change(int fd, int hci, RawAddress device, bool i
- }  // namespace
- 
- void init() {
-+  cached_codecs.clear();
-+  offload_supported = false;
-+  offload_enabled = false;
-+#ifdef TARGET_FLOSS
-+  // Explicit transport opt-in. This avoids the ChromeOS-specific management
-+  // commands, but does not teach a stock USB driver to configure isochronous
-+  // endpoints while the controller is owned through HCI_CHANNEL_USER.
-+  software_hci_transport =
-+          osi_property_get_bool("bluetooth.hfp.software_hci_transport.enabled", false);
-+  // Linux/ChromeOS properties are process-local. Let the service deployment
-+  // opt in explicitly without adding an unrestricted property-setting API.
-+  if (const char* value = std::getenv("FLOSS_HFP_SOFTWARE_HCI_TRANSPORT")) {
-+    software_hci_transport = std::strcmp(value, "true") == 0;
-+  }
-+  if (software_hci_transport) {
-+    auto controller = bluetooth::shim::GetController();
-+    if (controller != nullptr && controller->SupportsSco()) {
-+      cached_codecs.push_back({.inner = {.codec = codec::CVSD}});
-+    }
-+    // HFP mSBC T1 requires EV3 packets; the existing software codec handles
-+    // framing. The explicit property asserts that the host transport carries
-+    // these SCO packets; the feature bit alone cannot establish that.
-+    if (controller != nullptr && controller->SupportsEv3Packets()) {
-+      cached_codecs.push_back({.inner = {.codec = codec::MSBC_TRANSPARENT}, .pkt_size = 60});
-+    }
-+    bluetooth::log::warn("Using explicitly enabled software HCI SCO transport; "
-+                         "kernel USB transport support must be verified separately");
-+    return;
-+  }
-+#endif
-   int hci = GetAdapterIndex();
-   int fd = btsocket_open_mgmt(hci);
-   if (fd < 0) {
-@@ -331,6 +364,10 @@ bool get_wbs_supported() {
- // Check if super-wideband speech is supported on local device
- bool get_swb_supported() {
- #ifdef TARGET_FLOSS
-+  // Initial standard-HCI mode is deliberately limited to CVSD and mSBC.
-+  if (software_hci_transport) {
-+    return false;
-+  }
-   // We only support SWB via transparent mode.
-   return is_coding_format_supported(ESCO_CODING_FORMAT_TRANSPNT);
- #else
-@@ -455,6 +492,9 @@ size_t get_packet_size(int codec) {
- }
- 
- void notify_sco_connection_change(RawAddress device, bool is_connected, int codec) {
-+  if (software_hci_transport) {
-+    return;
-+  }
-   int hci = GetAdapterIndex();
-   int fd = btsocket_open_mgmt(hci);
-   if (fd < 0) {
 diff --git a/system/stack/mmc/codec_client/BUILD.gn b/system/stack/mmc/codec_client/BUILD.gn
 index ae02259..6f30620 100644
 --- a/system/stack/mmc/codec_client/BUILD.gn

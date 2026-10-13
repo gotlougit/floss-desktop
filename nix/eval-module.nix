@@ -36,6 +36,11 @@ in {
     kernelModules = cfg.boot.kernelModules;
     managerRequires = cfg.systemd.services.btmanagerd.requires;
   } else null;
+  mediaKeys = {
+    uinputEnabled = cfg.hardware.uinput.enable;
+    kernelModules = cfg.boot.kernelModules;
+    udevRules = cfg.services.udev.extraRules;
+  };
   manager = cfg.systemd.services.btmanagerd.serviceConfig;
   adapter = cfg.systemd.services."btadapterd@".serviceConfig;
   codec = cfg.systemd.services.floss-codec.serviceConfig;

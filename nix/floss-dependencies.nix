@@ -69,6 +69,7 @@ let
       substituteInPlace libchrome/BUILD.gn --replace-fail 'args = [ "--output" ] + outputs' 'args = [ "--output" ] + rebase_path(outputs, root_build_dir)'
       sed -i '1i#include <limits>' libchrome/base/memory/ref_counted.h
       sed -i '1i#include <cstring>' libchrome/base/hash/md5_nacl.cc
+      sed -i '1i#include <cstdint>' libchrome/third_party/perfetto/include/perfetto/protozero/message.h
       substituteInPlace libchrome/BUILD.gn --replace-fail '-Xclang-only=-Wno-char-subscripts' '-Wno-char-subscripts'
       substituteInPlace libchrome/BUILD.gn --replace-fail '"absl"' '"absl_base", "absl_flat_hash_map", "absl_hash", "absl_strings", "absl_synchronization"' --replace-fail '-I/usr/include/libchrome' "-I$out/include/libchrome"
     '';

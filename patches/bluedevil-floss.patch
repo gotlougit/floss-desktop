@@ -1,5 +1,5 @@
 diff --git a/.kde-ci.yml b/.kde-ci.yml
-index ac2b7811..4b0cf37e 100644
+index ac2b781..4b0cf37 100644
 --- a/.kde-ci.yml
 +++ b/.kde-ci.yml
 @@ -4,7 +4,6 @@
@@ -11,9 +11,21 @@ index ac2b7811..4b0cf37e 100644
      'frameworks/kauth': '@latest-kf6'
      'frameworks/kcodecs': '@latest-kf6'
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 07f7902e..962b28f1 100644
+index 07f7902..5fa9d7c 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
+@@ -3,9 +3,9 @@ cmake_minimum_required(VERSION 3.16)
+ project(bluedevil)
+ set(PROJECT_VERSION "6.8.80")
+ 
+-set(PROJECT_DEP_VERSION "6.7.90")
++set(PROJECT_DEP_VERSION "6.7.4")
+ set(QT_MIN_VERSION "6.11.0")
+-set(KF6_MIN_VERSION "6.30.0")
++set(KF6_MIN_VERSION "6.29.0")
+ set(KDE_COMPILERSETTINGS_LEVEL "5.82")
+ 
+ set(CMAKE_CXX_STANDARD 20)
 @@ -20,33 +20,16 @@ find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS
      DBus
      Qml
@@ -63,7 +75,7 @@ index 07f7902e..962b28f1 100644
  
  ki18n_install(po)
 diff --git a/README b/README
-index b819ed7f..fcee19e1 100644
+index b819ed7..fcee19e 100644
 --- a/README
 +++ b/README
 @@ -1,11 +1,13 @@
@@ -90,7 +102,7 @@ index b819ed7f..fcee19e1 100644
 +The upstream translation catalogs and handbook source remain for provenance;
 +the old handbook is not installed and does not describe this integration's feature set.
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 2c1d256c..1665e1b9 100644
+index 2c1d256..1665e1b 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -1,17 +1,5 @@
@@ -113,7 +125,7 @@ index 2c1d256c..1665e1b9 100644
 -install(FILES settings/bluedevilglobalsettings.kcfg DESTINATION ${KDE_INSTALL_KCFGDIR})
 -install(FILES settings/filereceiver.kcfg DESTINATION ${KDE_INSTALL_KCFGDIR})
 diff --git a/src/Messages.sh b/src/Messages.sh
-index 5d1e5641..f36ca520 100755
+index 5d1e564..f36ca52 100755
 --- a/src/Messages.sh
 +++ b/src/Messages.sh
 @@ -1,4 +1,3 @@
@@ -123,7 +135,7 @@ index 5d1e5641..f36ca520 100755
  $XGETTEXT `find . \( -name \*.cpp -o -name \*.qml \) ! -path "*applet*" ! -path "*kcm*"` -o $podir/bluedevil.pot
 diff --git a/src/XmlMessages.sh b/src/XmlMessages.sh
 deleted file mode 100755
-index 05651f53..00000000
+index 05651f5..0000000
 --- a/src/XmlMessages.sh
 +++ /dev/null
 @@ -1,22 +0,0 @@
@@ -150,7 +162,7 @@ index 05651f53..00000000
 -    esac
 -}
 diff --git a/src/applet/CMakeLists.txt b/src/applet/CMakeLists.txt
-index 2b7077b8..4a16593d 100644
+index 2b7077b..4a16593 100644
 --- a/src/applet/CMakeLists.txt
 +++ b/src/applet/CMakeLists.txt
 @@ -1,57 +1,18 @@
@@ -220,7 +232,7 @@ index 2b7077b8..4a16593d 100644
 +endif()
 diff --git a/src/applet/SharedDevicesStateProxyModel.qml b/src/applet/SharedDevicesStateProxyModel.qml
 deleted file mode 100644
-index 2c9da6ea..00000000
+index 2c9da6e..0000000
 --- a/src/applet/SharedDevicesStateProxyModel.qml
 +++ /dev/null
 @@ -1,16 +0,0 @@
@@ -242,7 +254,7 @@ index 2c9da6ea..00000000
 -}
 diff --git a/src/applet/devicesproxymodel.cpp b/src/applet/devicesproxymodel.cpp
 deleted file mode 100644
-index aac800ce..00000000
+index aac800c..0000000
 --- a/src/applet/devicesproxymodel.cpp
 +++ /dev/null
 @@ -1,123 +0,0 @@
@@ -371,7 +383,7 @@ index aac800ce..00000000
 -#include "moc_devicesproxymodel.cpp"
 diff --git a/src/applet/devicesproxymodel.h b/src/applet/devicesproxymodel.h
 deleted file mode 100644
-index bebbe333..00000000
+index bebbe33..0000000
 --- a/src/applet/devicesproxymodel.h
 +++ /dev/null
 @@ -1,46 +0,0 @@
@@ -423,7 +435,7 @@ index bebbe333..00000000
 -};
 diff --git a/src/applet/devicesstateproxymodel.cpp b/src/applet/devicesstateproxymodel.cpp
 deleted file mode 100644
-index e00ffab6..00000000
+index e00ffab..0000000
 --- a/src/applet/devicesstateproxymodel.cpp
 +++ /dev/null
 @@ -1,314 +0,0 @@
@@ -743,7 +755,7 @@ index e00ffab6..00000000
 -#include "moc_devicesstateproxymodel.cpp"
 diff --git a/src/applet/devicesstateproxymodel.h b/src/applet/devicesstateproxymodel.h
 deleted file mode 100644
-index 2d243270..00000000
+index 2d24327..0000000
 --- a/src/applet/devicesstateproxymodel.h
 +++ /dev/null
 @@ -1,80 +0,0 @@
@@ -829,7 +841,7 @@ index 2d243270..00000000
 -};
 diff --git a/src/applet/launchapp.cpp b/src/applet/launchapp.cpp
 deleted file mode 100644
-index 0fd12a5d..00000000
+index 0fd12a5..0000000
 --- a/src/applet/launchapp.cpp
 +++ /dev/null
 @@ -1,35 +0,0 @@
@@ -870,7 +882,7 @@ index 0fd12a5d..00000000
 -#include "moc_launchapp.cpp"
 diff --git a/src/applet/launchapp.h b/src/applet/launchapp.h
 deleted file mode 100644
-index b178091e..00000000
+index b178091..0000000
 --- a/src/applet/launchapp.h
 +++ /dev/null
 @@ -1,26 +0,0 @@
@@ -901,7 +913,7 @@ index b178091e..00000000
 -    void launchSendFile(const QString &ubi);
 -};
 diff --git a/src/applet/metadata.json b/src/applet/metadata.json
-index b651e0e4..1bbc79d8 100644
+index b651e0e..1bbc79d 100644
 --- a/src/applet/metadata.json
 +++ b/src/applet/metadata.json
 @@ -160,6 +160,6 @@
@@ -913,7 +925,7 @@ index b651e0e4..1bbc79d8 100644
      "X-Plasma-NotificationAreaCategory": "Hardware"
  }
 diff --git a/src/applet/qml/DeviceItem.qml b/src/applet/qml/DeviceItem.qml
-index e750926a..0e7700aa 100644
+index e750926..0e7700a 100644
 --- a/src/applet/qml/DeviceItem.qml
 +++ b/src/applet/qml/DeviceItem.qml
 @@ -3,338 +3,94 @@
@@ -1308,7 +1320,7 @@ index e750926a..0e7700aa 100644
      }
  }
 diff --git a/src/applet/qml/FullRepresentation.qml b/src/applet/qml/FullRepresentation.qml
-index c281b129..7515e8d9 100644
+index c281b12..7515e8d 100644
 --- a/src/applet/qml/FullRepresentation.qml
 +++ b/src/applet/qml/FullRepresentation.qml
 @@ -11,14 +11,12 @@ pragma ComponentBehavior: Bound
@@ -1449,7 +1461,7 @@ index c281b129..7515e8d9 100644
          }
 diff --git a/src/applet/qml/MediaPlayerItem.qml b/src/applet/qml/MediaPlayerItem.qml
 deleted file mode 100644
-index 1d1a0d43..00000000
+index 1d1a0d4..0000000
 --- a/src/applet/qml/MediaPlayerItem.qml
 +++ /dev/null
 @@ -1,125 +0,0 @@
@@ -1579,7 +1591,7 @@ index 1d1a0d43..00000000
 -    }
 -}
 diff --git a/src/applet/qml/Toolbar.qml b/src/applet/qml/Toolbar.qml
-index ce3ecc9c..75e0998f 100644
+index ce3ecc9..75e0998 100644
 --- a/src/applet/qml/Toolbar.qml
 +++ b/src/applet/qml/Toolbar.qml
 @@ -11,7 +11,6 @@ pragma ComponentBehavior: Bound
@@ -1600,7 +1612,7 @@ index ce3ecc9c..75e0998f 100644
              onToggled: root.toggleBluetoothAction.trigger()
          }
 diff --git a/src/applet/qml/main.qml b/src/applet/qml/main.qml
-index 9981d022..89d09aa2 100644
+index 9981d02..89d09aa 100644
 --- a/src/applet/qml/main.qml
 +++ b/src/applet/qml/main.qml
 @@ -2,32 +2,27 @@
@@ -1781,7 +1793,7 @@ index 9981d022..89d09aa2 100644
  }
 diff --git a/src/applet/utils.cpp b/src/applet/utils.cpp
 deleted file mode 100644
-index 7fd73ca0..00000000
+index 7fd73ca..0000000
 --- a/src/applet/utils.cpp
 +++ /dev/null
 @@ -1,27 +0,0 @@
@@ -1814,7 +1826,7 @@ index 7fd73ca0..00000000
 -#include "moc_utils.cpp"
 diff --git a/src/applet/utils.h b/src/applet/utils.h
 deleted file mode 100644
-index 2dd6125b..00000000
+index 2dd6125..0000000
 --- a/src/applet/utils.h
 +++ /dev/null
 @@ -1,25 +0,0 @@
@@ -1845,7 +1857,7 @@ index 2dd6125b..00000000
 -};
 diff --git a/src/bluedevil-mime.xml b/src/bluedevil-mime.xml
 deleted file mode 100644
-index 4656b82b..00000000
+index 4656b82..0000000
 --- a/src/bluedevil-mime.xml
 +++ /dev/null
 @@ -1,173 +0,0 @@
@@ -2024,7 +2036,7 @@ index 4656b82b..00000000
 -</mime-info>
 diff --git a/src/bluedevil.notifyrc b/src/bluedevil.notifyrc
 deleted file mode 100644
-index f7951a64..00000000
+index f7951a6..0000000
 --- a/src/bluedevil.notifyrc
 +++ /dev/null
 @@ -1,803 +0,0 @@
@@ -2832,7 +2844,7 @@ index f7951a64..00000000
 -Action=Popup
 -ShowPopupsInDndMode=true
 diff --git a/src/components/CMakeLists.txt b/src/components/CMakeLists.txt
-index 9ba8d2d9..0418baa8 100644
+index 9ba8d2d..0418baa 100644
 --- a/src/components/CMakeLists.txt
 +++ b/src/components/CMakeLists.txt
 @@ -11,7 +11,6 @@ target_link_libraries(bluedevilcomponents PRIVATE
@@ -2844,7 +2856,7 @@ index 9ba8d2d9..0418baa8 100644
   )
  
 diff --git a/src/components/ForgetDeviceDialog.qml b/src/components/ForgetDeviceDialog.qml
-index 773f23db..d536a67d 100644
+index 773f23d..d536a67 100644
 --- a/src/components/ForgetDeviceDialog.qml
 +++ b/src/components/ForgetDeviceDialog.qml
 @@ -8,7 +8,7 @@
@@ -2927,7 +2939,7 @@ index 773f23db..d536a67d 100644
  }
 diff --git a/src/interfaces/kded_bluedevil.xml b/src/interfaces/kded_bluedevil.xml
 deleted file mode 100644
-index e4478975..00000000
+index e447897..0000000
 --- a/src/interfaces/kded_bluedevil.xml
 +++ /dev/null
 @@ -1,23 +0,0 @@
@@ -2956,7 +2968,7 @@ index e4478975..00000000
 -</node>
 diff --git a/src/interfaces/kded_bluedevil_types.h b/src/interfaces/kded_bluedevil_types.h
 deleted file mode 100644
-index 00a43963..00000000
+index 00a4396..0000000
 --- a/src/interfaces/kded_bluedevil_types.h
 +++ /dev/null
 @@ -1,16 +0,0 @@
@@ -2978,7 +2990,7 @@ index 00a43963..00000000
 -Q_DECLARE_METATYPE(QMapDeviceInfo)
 diff --git a/src/interfaces/kded_obexftp.xml b/src/interfaces/kded_obexftp.xml
 deleted file mode 100644
-index 8e471f83..00000000
+index 8e471f8..0000000
 --- a/src/interfaces/kded_obexftp.xml
 +++ /dev/null
 @@ -1,23 +0,0 @@
@@ -3006,7 +3018,7 @@ index 8e471f83..00000000
 -  </interface>
 -</node>
 diff --git a/src/kcm/CMakeLists.txt b/src/kcm/CMakeLists.txt
-index a60d8c33..68b62350 100644
+index a60d8c3..68b6235 100644
 --- a/src/kcm/CMakeLists.txt
 +++ b/src/kcm/CMakeLists.txt
 @@ -1,20 +1,2 @@
@@ -3033,7 +3045,7 @@ index a60d8c33..68b62350 100644
 +kcmutils_add_qml_kcm(kcm_bluetooth SOURCES bluetooth.cpp bluetooth.h)
 +target_link_libraries(kcm_bluetooth PRIVATE Qt::Core Qt::Qml KF6::CoreAddons KF6::KCMUtilsQuick)
 diff --git a/src/kcm/bluetooth.cpp b/src/kcm/bluetooth.cpp
-index b0646e7b..6b495017 100644
+index b0646e7..6b49501 100644
 --- a/src/kcm/bluetooth.cpp
 +++ b/src/kcm/bluetooth.cpp
 @@ -3,152 +3,16 @@
@@ -3192,7 +3204,7 @@ index b0646e7b..6b495017 100644
 -
  #include "moc_bluetooth.cpp"
 diff --git a/src/kcm/bluetooth.h b/src/kcm/bluetooth.h
-index b57eba3a..6d801b4c 100644
+index b57eba3..6d801b4 100644
 --- a/src/kcm/bluetooth.h
 +++ b/src/kcm/bluetooth.h
 @@ -3,34 +3,12 @@
@@ -3232,7 +3244,7 @@ index b57eba3a..6d801b4c 100644
  };
 diff --git a/src/kcm/bluetoothmoduledata.cpp b/src/kcm/bluetoothmoduledata.cpp
 deleted file mode 100644
-index 54c03d16..00000000
+index 54c03d1..0000000
 --- a/src/kcm/bluetoothmoduledata.cpp
 +++ /dev/null
 @@ -1,55 +0,0 @@
@@ -3293,7 +3305,7 @@ index 54c03d16..00000000
 -#include "moc_bluetoothmoduledata.cpp"
 diff --git a/src/kcm/bluetoothmoduledata.h b/src/kcm/bluetoothmoduledata.h
 deleted file mode 100644
-index 9e2242d9..00000000
+index 9e2242d..0000000
 --- a/src/kcm/bluetoothmoduledata.h
 +++ /dev/null
 @@ -1,31 +0,0 @@
@@ -3329,7 +3341,7 @@ index 9e2242d9..00000000
 -    QAction *m_toggleAction;
 -};
 diff --git a/src/kcm/kcm_bluetooth.json b/src/kcm/kcm_bluetooth.json
-index df66346f..2596d0dc 100644
+index df66346..2596d0d 100644
 --- a/src/kcm/kcm_bluetooth.json
 +++ b/src/kcm/kcm_bluetooth.json
 @@ -167,7 +167,6 @@
@@ -3348,7 +3360,7 @@ index df66346f..2596d0dc 100644
      "X-KDE-Weight": 20
  }
 diff --git a/src/kcm/ui/Device.qml b/src/kcm/ui/Device.qml
-index e6a6f84f..6578e705 100644
+index e6a6f84..6578e70 100644
 --- a/src/kcm/ui/Device.qml
 +++ b/src/kcm/ui/Device.qml
 @@ -2,236 +2,108 @@
@@ -3646,7 +3658,7 @@ index e6a6f84f..6578e705 100644
      }
 diff --git a/src/kcm/ui/ForgetDeviceAction.qml b/src/kcm/ui/ForgetDeviceAction.qml
 deleted file mode 100644
-index 4f7496cf..00000000
+index 4f7496c..0000000
 --- a/src/kcm/ui/ForgetDeviceAction.qml
 +++ /dev/null
 @@ -1,27 +0,0 @@
@@ -3679,7 +3691,7 @@ index 4f7496cf..00000000
 -}
 diff --git a/src/kcm/ui/General.qml b/src/kcm/ui/General.qml
 deleted file mode 100644
-index 4e43398d..00000000
+index 4e43398..0000000
 --- a/src/kcm/ui/General.qml
 +++ /dev/null
 @@ -1,188 +0,0 @@
@@ -3872,7 +3884,7 @@ index 4e43398d..00000000
 -    }
 -}
 diff --git a/src/kcm/ui/main.qml b/src/kcm/ui/main.qml
-index 1e5661f0..de37ed22 100644
+index 1e5661f..de37ed2 100644
 --- a/src/kcm/ui/main.qml
 +++ b/src/kcm/ui/main.qml
 @@ -5,248 +5,124 @@
@@ -4182,7 +4194,7 @@ index 1e5661f0..de37ed22 100644
  }
 diff --git a/src/kcm/ui/script.js b/src/kcm/ui/script.js
 deleted file mode 100644
-index 3dc3811e..00000000
+index 3dc3811..0000000
 --- a/src/kcm/ui/script.js
 +++ /dev/null
 @@ -1,74 +0,0 @@
@@ -4262,7 +4274,7 @@ index 3dc3811e..00000000
 -}
 diff --git a/src/kded/CMakeLists.txt b/src/kded/CMakeLists.txt
 deleted file mode 100644
-index 62700c4e..00000000
+index 62700c4..0000000
 --- a/src/kded/CMakeLists.txt
 +++ /dev/null
 @@ -1,44 +0,0 @@
@@ -4312,7 +4324,7 @@ index 62700c4e..00000000
 -)
 diff --git a/src/kded/bluedevil.json b/src/kded/bluedevil.json
 deleted file mode 100644
-index 5c0474a0..00000000
+index 5c0474a..0000000
 --- a/src/kded/bluedevil.json
 +++ /dev/null
 @@ -1,116 +0,0 @@
@@ -4434,7 +4446,7 @@ index 5c0474a0..00000000
 -}
 diff --git a/src/kded/bluedevildaemon.cpp b/src/kded/bluedevildaemon.cpp
 deleted file mode 100644
-index 2fdcede2..00000000
+index 2fdcede..0000000
 --- a/src/kded/bluedevildaemon.cpp
 +++ /dev/null
 @@ -1,271 +0,0 @@
@@ -4711,7 +4723,7 @@ index 2fdcede2..00000000
 -#include "moc_bluedevildaemon.cpp"
 diff --git a/src/kded/bluedevildaemon.h b/src/kded/bluedevildaemon.h
 deleted file mode 100644
-index 2d428275..00000000
+index 2d42827..0000000
 --- a/src/kded/bluedevildaemon.h
 +++ /dev/null
 @@ -1,77 +0,0 @@
@@ -4794,7 +4806,7 @@ index 2d428275..00000000
 -};
 diff --git a/src/kded/bluezagent.cpp b/src/kded/bluezagent.cpp
 deleted file mode 100644
-index 304c7c7c..00000000
+index 304c7c7..0000000
 --- a/src/kded/bluezagent.cpp
 +++ /dev/null
 @@ -1,140 +0,0 @@
@@ -4940,7 +4952,7 @@ index 304c7c7c..00000000
 -#include "moc_bluezagent.cpp"
 diff --git a/src/kded/bluezagent.h b/src/kded/bluezagent.h
 deleted file mode 100644
-index 4c1ea51c..00000000
+index 4c1ea51..0000000
 --- a/src/kded/bluezagent.h
 +++ /dev/null
 @@ -1,34 +0,0 @@
@@ -4980,7 +4992,7 @@ index 4c1ea51c..00000000
 -};
 diff --git a/src/kded/devicemonitor.cpp b/src/kded/devicemonitor.cpp
 deleted file mode 100644
-index 1de54443..00000000
+index 1de5444..0000000
 --- a/src/kded/devicemonitor.cpp
 +++ /dev/null
 @@ -1,262 +0,0 @@
@@ -5248,7 +5260,7 @@ index 1de54443..00000000
 -#include "moc_devicemonitor.cpp"
 diff --git a/src/kded/devicemonitor.h b/src/kded/devicemonitor.h
 deleted file mode 100644
-index 039e8a8c..00000000
+index 039e8a8..0000000
 --- a/src/kded/devicemonitor.h
 +++ /dev/null
 @@ -1,51 +0,0 @@
@@ -5305,7 +5317,7 @@ index 039e8a8c..00000000
 -};
 diff --git a/src/kded/helpers/requestauthorization.cpp b/src/kded/helpers/requestauthorization.cpp
 deleted file mode 100644
-index 87b04e07..00000000
+index 87b04e0..0000000
 --- a/src/kded/helpers/requestauthorization.cpp
 +++ /dev/null
 @@ -1,71 +0,0 @@
@@ -5382,7 +5394,7 @@ index 87b04e07..00000000
 -#include "moc_requestauthorization.cpp"
 diff --git a/src/kded/helpers/requestauthorization.h b/src/kded/helpers/requestauthorization.h
 deleted file mode 100644
-index b13d732e..00000000
+index b13d732..0000000
 --- a/src/kded/helpers/requestauthorization.h
 +++ /dev/null
 @@ -1,39 +0,0 @@
@@ -5427,7 +5439,7 @@ index b13d732e..00000000
 -};
 diff --git a/src/kded/helpers/requestconfirmation.cpp b/src/kded/helpers/requestconfirmation.cpp
 deleted file mode 100644
-index a88a8f41..00000000
+index a88a8f4..0000000
 --- a/src/kded/helpers/requestconfirmation.cpp
 +++ /dev/null
 @@ -1,60 +0,0 @@
@@ -5493,7 +5505,7 @@ index a88a8f41..00000000
 -#include "moc_requestconfirmation.cpp"
 diff --git a/src/kded/helpers/requestconfirmation.h b/src/kded/helpers/requestconfirmation.h
 deleted file mode 100644
-index baafad07..00000000
+index baafad0..0000000
 --- a/src/kded/helpers/requestconfirmation.h
 +++ /dev/null
 @@ -1,38 +0,0 @@
@@ -5537,7 +5549,7 @@ index baafad07..00000000
 -};
 diff --git a/src/kded/helpers/requestpin.cpp b/src/kded/helpers/requestpin.cpp
 deleted file mode 100644
-index 4a01aec0..00000000
+index 4a01aec..0000000
 --- a/src/kded/helpers/requestpin.cpp
 +++ /dev/null
 @@ -1,118 +0,0 @@
@@ -5661,7 +5673,7 @@ index 4a01aec0..00000000
 -#include "moc_requestpin.cpp"
 diff --git a/src/kded/helpers/requestpin.h b/src/kded/helpers/requestpin.h
 deleted file mode 100644
-index 79eac8be..00000000
+index 79eac8b..0000000
 --- a/src/kded/helpers/requestpin.h
 +++ /dev/null
 @@ -1,45 +0,0 @@
@@ -5712,7 +5724,7 @@ index 79eac8be..00000000
 -};
 diff --git a/src/kded/helpers/requestpin.ui b/src/kded/helpers/requestpin.ui
 deleted file mode 100644
-index 8c195d61..00000000
+index 8c195d6..0000000
 --- a/src/kded/helpers/requestpin.ui
 +++ /dev/null
 @@ -1,80 +0,0 @@
@@ -5798,7 +5810,7 @@ index 8c195d61..00000000
 -</ui>
 diff --git a/src/kded/obexagent.cpp b/src/kded/obexagent.cpp
 deleted file mode 100644
-index 8f0ffff4..00000000
+index 8f0ffff..0000000
 --- a/src/kded/obexagent.cpp
 +++ /dev/null
 @@ -1,67 +0,0 @@
@@ -5871,7 +5883,7 @@ index 8f0ffff4..00000000
 -#include "moc_obexagent.cpp"
 diff --git a/src/kded/obexagent.h b/src/kded/obexagent.h
 deleted file mode 100644
-index 08886f12..00000000
+index 08886f1..0000000
 --- a/src/kded/obexagent.h
 +++ /dev/null
 @@ -1,36 +0,0 @@
@@ -5913,7 +5925,7 @@ index 08886f12..00000000
 -};
 diff --git a/src/kded/obexftp.cpp b/src/kded/obexftp.cpp
 deleted file mode 100644
-index 91640537..00000000
+index 9164053..0000000
 --- a/src/kded/obexftp.cpp
 +++ /dev/null
 @@ -1,153 +0,0 @@
@@ -6072,7 +6084,7 @@ index 91640537..00000000
 -#include "moc_obexftp.cpp"
 diff --git a/src/kded/obexftp.h b/src/kded/obexftp.h
 deleted file mode 100644
-index 94332758..00000000
+index 9433275..0000000
 --- a/src/kded/obexftp.h
 +++ /dev/null
 @@ -1,42 +0,0 @@
@@ -6120,7 +6132,7 @@ index 94332758..00000000
 -};
 diff --git a/src/kded/receivefilejob.cpp b/src/kded/receivefilejob.cpp
 deleted file mode 100644
-index 2be06dfa..00000000
+index 2be06df..0000000
 --- a/src/kded/receivefilejob.cpp
 +++ /dev/null
 @@ -1,272 +0,0 @@
@@ -6398,7 +6410,7 @@ index 2be06dfa..00000000
 -#include "moc_receivefilejob.cpp"
 diff --git a/src/kded/receivefilejob.h b/src/kded/receivefilejob.h
 deleted file mode 100644
-index 8c8e6955..00000000
+index 8c8e695..0000000
 --- a/src/kded/receivefilejob.h
 +++ /dev/null
 @@ -1,57 +0,0 @@
@@ -6461,7 +6473,7 @@ index 8c8e6955..00000000
 -};
 diff --git a/src/kio/CMakeLists.txt b/src/kio/CMakeLists.txt
 deleted file mode 100644
-index a6652be0..00000000
+index a6652be..0000000
 --- a/src/kio/CMakeLists.txt
 +++ /dev/null
 @@ -1,2 +0,0 @@
@@ -6469,7 +6481,7 @@ index a6652be0..00000000
 -add_subdirectory(obexftp)
 diff --git a/src/kio/bluetooth/CMakeLists.txt b/src/kio/bluetooth/CMakeLists.txt
 deleted file mode 100644
-index e02c65da..00000000
+index e02c65d..0000000
 --- a/src/kio/bluetooth/CMakeLists.txt
 +++ /dev/null
 @@ -1,30 +0,0 @@
@@ -6505,7 +6517,7 @@ index e02c65da..00000000
 -install(FILES bluetooth-network.desktop DESTINATION ${KDE_INSTALL_DATADIR}/remoteview)
 diff --git a/src/kio/bluetooth/bluetooth-network.desktop b/src/kio/bluetooth/bluetooth-network.desktop
 deleted file mode 100644
-index 28765cf2..00000000
+index 28765cf..0000000
 --- a/src/kio/bluetooth/bluetooth-network.desktop
 +++ /dev/null
 @@ -1,62 +0,0 @@
@@ -6573,7 +6585,7 @@ index 28765cf2..00000000
 -URL=bluetooth:/
 diff --git a/src/kio/bluetooth/bluetooth.json b/src/kio/bluetooth/bluetooth.json
 deleted file mode 100644
-index 4ae8c0e7..00000000
+index 4ae8c0e..0000000
 --- a/src/kio/bluetooth/bluetooth.json
 +++ /dev/null
 @@ -1,23 +0,0 @@
@@ -6602,7 +6614,7 @@ index 4ae8c0e7..00000000
 -}
 diff --git a/src/kio/bluetooth/kiobluetooth.cpp b/src/kio/bluetooth/kiobluetooth.cpp
 deleted file mode 100644
-index 553fe615..00000000
+index 553fe61..0000000
 --- a/src/kio/bluetooth/kiobluetooth.cpp
 +++ /dev/null
 @@ -1,252 +0,0 @@
@@ -6860,7 +6872,7 @@ index 553fe615..00000000
 -#include "moc_kiobluetooth.cpp"
 diff --git a/src/kio/bluetooth/kiobluetooth.h b/src/kio/bluetooth/kiobluetooth.h
 deleted file mode 100644
-index 133b5876..00000000
+index 133b587..0000000
 --- a/src/kio/bluetooth/kiobluetooth.h
 +++ /dev/null
 @@ -1,122 +0,0 @@
@@ -6988,7 +7000,7 @@ index 133b5876..00000000
 -Q_DECLARE_LOGGING_CATEGORY(BLUETOOTH)
 diff --git a/src/kio/obexftp/CMakeLists.txt b/src/kio/obexftp/CMakeLists.txt
 deleted file mode 100644
-index 73a7d472..00000000
+index 73a7d47..0000000
 --- a/src/kio/obexftp/CMakeLists.txt
 +++ /dev/null
 @@ -1,29 +0,0 @@
@@ -7023,7 +7035,7 @@ index 73a7d472..00000000
 -install(TARGETS kio_obexftp DESTINATION ${KDE_INSTALL_PLUGINDIR}/kf6/kio)
 diff --git a/src/kio/obexftp/kioobexftp.cpp b/src/kio/obexftp/kioobexftp.cpp
 deleted file mode 100644
-index 5040b0f2..00000000
+index 5040b0f..0000000
 --- a/src/kio/obexftp/kioobexftp.cpp
 +++ /dev/null
 @@ -1,530 +0,0 @@
@@ -7559,7 +7571,7 @@ index 5040b0f2..00000000
 -#include "moc_kioobexftp.cpp"
 diff --git a/src/kio/obexftp/kioobexftp.h b/src/kio/obexftp/kioobexftp.h
 deleted file mode 100644
-index fd598e3a..00000000
+index fd598e3..0000000
 --- a/src/kio/obexftp/kioobexftp.h
 +++ /dev/null
 @@ -1,66 +0,0 @@
@@ -7631,7 +7643,7 @@ index fd598e3a..00000000
 -};
 diff --git a/src/kio/obexftp/obexftp.json b/src/kio/obexftp/obexftp.json
 deleted file mode 100644
-index 2f8d1a73..00000000
+index 2f8d1a7..0000000
 --- a/src/kio/obexftp/obexftp.json
 +++ /dev/null
 @@ -1,24 +0,0 @@
@@ -7661,7 +7673,7 @@ index 2f8d1a73..00000000
 -}
 diff --git a/src/kio/obexftp/transferfilejob.cpp b/src/kio/obexftp/transferfilejob.cpp
 deleted file mode 100644
-index 6270e6a4..00000000
+index 6270e6a..0000000
 --- a/src/kio/obexftp/transferfilejob.cpp
 +++ /dev/null
 @@ -1,84 +0,0 @@
@@ -7751,7 +7763,7 @@ index 6270e6a4..00000000
 -#include "moc_transferfilejob.cpp"
 diff --git a/src/kio/obexftp/transferfilejob.h b/src/kio/obexftp/transferfilejob.h
 deleted file mode 100644
-index 389682c6..00000000
+index 389682c..0000000
 --- a/src/kio/obexftp/transferfilejob.h
 +++ /dev/null
 @@ -1,36 +0,0 @@
@@ -7793,7 +7805,7 @@ index 389682c6..00000000
 -};
 diff --git a/src/sendfile/CMakeLists.txt b/src/sendfile/CMakeLists.txt
 deleted file mode 100644
-index 1d869067..00000000
+index 1d86906..0000000
 --- a/src/sendfile/CMakeLists.txt
 +++ /dev/null
 @@ -1,45 +0,0 @@
@@ -7844,7 +7856,7 @@ index 1d869067..00000000
 -install(FILES org.kde.bluedevilsendfile.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 diff --git a/src/sendfile/discover.ui b/src/sendfile/discover.ui
 deleted file mode 100644
-index e4faaf13..00000000
+index e4faaf1..0000000
 --- a/src/sendfile/discover.ui
 +++ /dev/null
 @@ -1,38 +0,0 @@
@@ -7888,7 +7900,7 @@ index e4faaf13..00000000
 -</ui>
 diff --git a/src/sendfile/discoverwidget.cpp b/src/sendfile/discoverwidget.cpp
 deleted file mode 100644
-index f2904ba7..00000000
+index f2904ba..0000000
 --- a/src/sendfile/discoverwidget.cpp
 +++ /dev/null
 @@ -1,156 +0,0 @@
@@ -8050,7 +8062,7 @@ index f2904ba7..00000000
 -#include "moc_discoverwidget.cpp"
 diff --git a/src/sendfile/discoverwidget.h b/src/sendfile/discoverwidget.h
 deleted file mode 100644
-index 68ab1e59..00000000
+index 68ab1e5..0000000
 --- a/src/sendfile/discoverwidget.h
 +++ /dev/null
 @@ -1,42 +0,0 @@
@@ -8098,7 +8110,7 @@ index 68ab1e59..00000000
 -};
 diff --git a/src/sendfile/main.cpp b/src/sendfile/main.cpp
 deleted file mode 100644
-index d7874aa3..00000000
+index d7874aa..0000000
 --- a/src/sendfile/main.cpp
 +++ /dev/null
 @@ -1,82 +0,0 @@
@@ -8186,7 +8198,7 @@ index d7874aa3..00000000
 -}
 diff --git a/src/sendfile/org.kde.bluedevilsendfile.desktop b/src/sendfile/org.kde.bluedevilsendfile.desktop
 deleted file mode 100644
-index 42cd5ae3..00000000
+index 42cd5ae..0000000
 --- a/src/sendfile/org.kde.bluedevilsendfile.desktop
 +++ /dev/null
 @@ -1,155 +0,0 @@
@@ -8347,7 +8359,7 @@ index 42cd5ae3..00000000
 -MimeType=application/vnd.kde.bluedevil-sendfile
 diff --git a/src/sendfile/pages/connecting.ui b/src/sendfile/pages/connecting.ui
 deleted file mode 100644
-index 199411d9..00000000
+index 199411d..0000000
 --- a/src/sendfile/pages/connecting.ui
 +++ /dev/null
 @@ -1,32 +0,0 @@
@@ -8385,7 +8397,7 @@ index 199411d9..00000000
 -</ui>
 diff --git a/src/sendfile/pages/connectingpage.cpp b/src/sendfile/pages/connectingpage.cpp
 deleted file mode 100644
-index dc01397d..00000000
+index dc01397..0000000
 --- a/src/sendfile/pages/connectingpage.cpp
 +++ /dev/null
 @@ -1,84 +0,0 @@
@@ -8475,7 +8487,7 @@ index dc01397d..00000000
 -#include "moc_connectingpage.cpp"
 diff --git a/src/sendfile/pages/connectingpage.h b/src/sendfile/pages/connectingpage.h
 deleted file mode 100644
-index eac57884..00000000
+index eac5788..0000000
 --- a/src/sendfile/pages/connectingpage.h
 +++ /dev/null
 @@ -1,39 +0,0 @@
@@ -8520,7 +8532,7 @@ index eac57884..00000000
 -};
 diff --git a/src/sendfile/pages/failpage.cpp b/src/sendfile/pages/failpage.cpp
 deleted file mode 100644
-index b3f5049a..00000000
+index b3f5049..0000000
 --- a/src/sendfile/pages/failpage.cpp
 +++ /dev/null
 @@ -1,54 +0,0 @@
@@ -8580,7 +8592,7 @@ index b3f5049a..00000000
 -#include "moc_failpage.cpp"
 diff --git a/src/sendfile/pages/failpage.h b/src/sendfile/pages/failpage.h
 deleted file mode 100644
-index 2b6a1bb2..00000000
+index 2b6a1bb..0000000
 --- a/src/sendfile/pages/failpage.h
 +++ /dev/null
 @@ -1,36 +0,0 @@
@@ -8622,7 +8634,7 @@ index 2b6a1bb2..00000000
 -};
 diff --git a/src/sendfile/pages/failpage.ui b/src/sendfile/pages/failpage.ui
 deleted file mode 100644
-index d97a3c93..00000000
+index d97a3c9..0000000
 --- a/src/sendfile/pages/failpage.ui
 +++ /dev/null
 @@ -1,80 +0,0 @@
@@ -8708,7 +8720,7 @@ index d97a3c93..00000000
 -</ui>
 diff --git a/src/sendfile/pages/selectdeviceandfilespage.cpp b/src/sendfile/pages/selectdeviceandfilespage.cpp
 deleted file mode 100644
-index 4e029875..00000000
+index 4e02987..0000000
 --- a/src/sendfile/pages/selectdeviceandfilespage.cpp
 +++ /dev/null
 @@ -1,86 +0,0 @@
@@ -8800,7 +8812,7 @@ index 4e029875..00000000
 -#include "moc_selectdeviceandfilespage.cpp"
 diff --git a/src/sendfile/pages/selectdeviceandfilespage.h b/src/sendfile/pages/selectdeviceandfilespage.h
 deleted file mode 100644
-index 13c00d09..00000000
+index 13c00d0..0000000
 --- a/src/sendfile/pages/selectdeviceandfilespage.h
 +++ /dev/null
 @@ -1,35 +0,0 @@
@@ -8841,7 +8853,7 @@ index 13c00d09..00000000
 -};
 diff --git a/src/sendfile/pages/selectdevicepage.cpp b/src/sendfile/pages/selectdevicepage.cpp
 deleted file mode 100644
-index 9654b275..00000000
+index 9654b27..0000000
 --- a/src/sendfile/pages/selectdevicepage.cpp
 +++ /dev/null
 @@ -1,51 +0,0 @@
@@ -8898,7 +8910,7 @@ index 9654b275..00000000
 -#include "moc_selectdevicepage.cpp"
 diff --git a/src/sendfile/pages/selectdevicepage.h b/src/sendfile/pages/selectdevicepage.h
 deleted file mode 100644
-index f190b77c..00000000
+index f190b77..0000000
 --- a/src/sendfile/pages/selectdevicepage.h
 +++ /dev/null
 @@ -1,34 +0,0 @@
@@ -8938,7 +8950,7 @@ index f190b77c..00000000
 -};
 diff --git a/src/sendfile/pages/selectfilediscover.ui b/src/sendfile/pages/selectfilediscover.ui
 deleted file mode 100644
-index 274b1df0..00000000
+index 274b1df..0000000
 --- a/src/sendfile/pages/selectfilediscover.ui
 +++ /dev/null
 @@ -1,127 +0,0 @@
@@ -9071,7 +9083,7 @@ index 274b1df0..00000000
 -</ui>
 diff --git a/src/sendfile/pages/selectfilespage.cpp b/src/sendfile/pages/selectfilespage.cpp
 deleted file mode 100644
-index 6c0d8341..00000000
+index 6c0d834..0000000
 --- a/src/sendfile/pages/selectfilespage.cpp
 +++ /dev/null
 @@ -1,67 +0,0 @@
@@ -9144,7 +9156,7 @@ index 6c0d8341..00000000
 -#include "moc_selectfilespage.cpp"
 diff --git a/src/sendfile/pages/selectfilespage.h b/src/sendfile/pages/selectfilespage.h
 deleted file mode 100644
-index 28b9e8ac..00000000
+index 28b9e8a..0000000
 --- a/src/sendfile/pages/selectfilespage.h
 +++ /dev/null
 @@ -1,31 +0,0 @@
@@ -9181,7 +9193,7 @@ index 28b9e8ac..00000000
 -};
 diff --git a/src/sendfile/sendfilesjob.cpp b/src/sendfile/sendfilesjob.cpp
 deleted file mode 100644
-index 9adc2a59..00000000
+index 9adc2a5..0000000
 --- a/src/sendfile/sendfilesjob.cpp
 +++ /dev/null
 @@ -1,173 +0,0 @@
@@ -9360,7 +9372,7 @@ index 9adc2a59..00000000
 -#include "moc_sendfilesjob.cpp"
 diff --git a/src/sendfile/sendfilesjob.h b/src/sendfile/sendfilesjob.h
 deleted file mode 100644
-index 8e84b98c..00000000
+index 8e84b98..0000000
 --- a/src/sendfile/sendfilesjob.h
 +++ /dev/null
 @@ -1,59 +0,0 @@
@@ -9425,7 +9437,7 @@ index 8e84b98c..00000000
 -};
 diff --git a/src/sendfile/sendfilewizard.cpp b/src/sendfile/sendfilewizard.cpp
 deleted file mode 100644
-index 34b503ee..00000000
+index 34b503e..0000000
 --- a/src/sendfile/sendfilewizard.cpp
 +++ /dev/null
 @@ -1,209 +0,0 @@
@@ -9640,7 +9652,7 @@ index 34b503ee..00000000
 -#include "moc_sendfilewizard.cpp"
 diff --git a/src/sendfile/sendfilewizard.h b/src/sendfile/sendfilewizard.h
 deleted file mode 100644
-index 9d646a5e..00000000
+index 9d646a5..0000000
 --- a/src/sendfile/sendfilewizard.h
 +++ /dev/null
 @@ -1,67 +0,0 @@
@@ -9713,7 +9725,7 @@ index 9d646a5e..00000000
 -};
 diff --git a/src/settings/bluedevilglobalsettings.kcfg b/src/settings/bluedevilglobalsettings.kcfg
 deleted file mode 100644
-index d89d9811..00000000
+index d89d981..0000000
 --- a/src/settings/bluedevilglobalsettings.kcfg
 +++ /dev/null
 @@ -1,28 +0,0 @@
@@ -9747,7 +9759,7 @@ index d89d9811..00000000
 -</kcfg>
 diff --git a/src/settings/bluedevilglobalsettings.kcfgc b/src/settings/bluedevilglobalsettings.kcfgc
 deleted file mode 100644
-index 391ed86c..00000000
+index 391ed86..0000000
 --- a/src/settings/bluedevilglobalsettings.kcfgc
 +++ /dev/null
 @@ -1,7 +0,0 @@
@@ -9760,7 +9772,7 @@ index 391ed86c..00000000
 -GenerateProperties=true
 diff --git a/src/settings/filereceiver.kcfg b/src/settings/filereceiver.kcfg
 deleted file mode 100644
-index 49f19896..00000000
+index 49f1989..0000000
 --- a/src/settings/filereceiver.kcfg
 +++ /dev/null
 @@ -1,19 +0,0 @@
@@ -9785,7 +9797,7 @@ index 49f19896..00000000
 -</kcfg>
 diff --git a/src/settings/filereceiversettings.kcfgc b/src/settings/filereceiversettings.kcfgc
 deleted file mode 100644
-index 42bf0ba4..00000000
+index 42bf0ba..0000000
 --- a/src/settings/filereceiversettings.kcfgc
 +++ /dev/null
 @@ -1,5 +0,0 @@
@@ -9796,7 +9808,7 @@ index 42bf0ba4..00000000
 -GenerateProperties=true
 diff --git a/src/wizard/CMakeLists.txt b/src/wizard/CMakeLists.txt
 deleted file mode 100644
-index 6622e79c..00000000
+index 6622e79..0000000
 --- a/src/wizard/CMakeLists.txt
 +++ /dev/null
 @@ -1,45 +0,0 @@
@@ -9847,7 +9859,7 @@ index 6622e79c..00000000
 -install(FILES pin-code-database.xml DESTINATION ${KDE_INSTALL_DATADIR}/bluedevilwizard)
 diff --git a/src/wizard/bluewizard.cpp b/src/wizard/bluewizard.cpp
 deleted file mode 100644
-index d7aef2a9..00000000
+index d7aef2a..0000000
 --- a/src/wizard/bluewizard.cpp
 +++ /dev/null
 @@ -1,132 +0,0 @@
@@ -9985,7 +9997,7 @@ index d7aef2a9..00000000
 -#include "moc_bluewizard.cpp"
 diff --git a/src/wizard/bluewizard.h b/src/wizard/bluewizard.h
 deleted file mode 100644
-index de85f3ba..00000000
+index de85f3b..0000000
 --- a/src/wizard/bluewizard.h
 +++ /dev/null
 @@ -1,48 +0,0 @@
@@ -10039,7 +10051,7 @@ index de85f3ba..00000000
 -};
 diff --git a/src/wizard/main.cpp b/src/wizard/main.cpp
 deleted file mode 100644
-index dde97d32..00000000
+index dde97d3..0000000
 --- a/src/wizard/main.cpp
 +++ /dev/null
 @@ -1,72 +0,0 @@
@@ -10117,7 +10129,7 @@ index dde97d32..00000000
 -}
 diff --git a/src/wizard/org.kde.bluedevilwizard.desktop b/src/wizard/org.kde.bluedevilwizard.desktop
 deleted file mode 100644
-index cdb5f8a9..00000000
+index cdb5f8a..0000000
 --- a/src/wizard/org.kde.bluedevilwizard.desktop
 +++ /dev/null
 @@ -1,154 +0,0 @@
@@ -10277,7 +10289,7 @@ index cdb5f8a9..00000000
 -X-DBUS-ServiceName=org.kde.bluedevilwizard
 diff --git a/src/wizard/pages/connect.cpp b/src/wizard/pages/connect.cpp
 deleted file mode 100644
-index 501365d9..00000000
+index 501365d..0000000
 --- a/src/wizard/pages/connect.cpp
 +++ /dev/null
 @@ -1,65 +0,0 @@
@@ -10348,7 +10360,7 @@ index 501365d9..00000000
 -#include "moc_connect.cpp"
 diff --git a/src/wizard/pages/connect.h b/src/wizard/pages/connect.h
 deleted file mode 100644
-index d4c2230f..00000000
+index d4c2230..0000000
 --- a/src/wizard/pages/connect.h
 +++ /dev/null
 @@ -1,42 +0,0 @@
@@ -10396,7 +10408,7 @@ index d4c2230f..00000000
 -};
 diff --git a/src/wizard/pages/connect.ui b/src/wizard/pages/connect.ui
 deleted file mode 100644
-index 168abd71..00000000
+index 168abd7..0000000
 --- a/src/wizard/pages/connect.ui
 +++ /dev/null
 @@ -1,28 +0,0 @@
@@ -10430,7 +10442,7 @@ index 168abd71..00000000
 -</ui>
 diff --git a/src/wizard/pages/discover.cpp b/src/wizard/pages/discover.cpp
 deleted file mode 100644
-index 8f3786e7..00000000
+index 8f3786e..0000000
 --- a/src/wizard/pages/discover.cpp
 +++ /dev/null
 @@ -1,399 +0,0 @@
@@ -10835,7 +10847,7 @@ index 8f3786e7..00000000
 -#include "moc_discover.cpp"
 diff --git a/src/wizard/pages/discover.h b/src/wizard/pages/discover.h
 deleted file mode 100644
-index 5f657fb0..00000000
+index 5f657fb..0000000
 --- a/src/wizard/pages/discover.h
 +++ /dev/null
 @@ -1,50 +0,0 @@
@@ -10891,7 +10903,7 @@ index 5f657fb0..00000000
 -};
 diff --git a/src/wizard/pages/discover.ui b/src/wizard/pages/discover.ui
 deleted file mode 100644
-index 9212db30..00000000
+index 9212db3..0000000
 --- a/src/wizard/pages/discover.ui
 +++ /dev/null
 @@ -1,138 +0,0 @@
@@ -11035,7 +11047,7 @@ index 9212db30..00000000
 -</ui>
 diff --git a/src/wizard/pages/fail.cpp b/src/wizard/pages/fail.cpp
 deleted file mode 100644
-index e9478f3d..00000000
+index e9478f3..0000000
 --- a/src/wizard/pages/fail.cpp
 +++ /dev/null
 @@ -1,59 +0,0 @@
@@ -11100,7 +11112,7 @@ index e9478f3d..00000000
 -#include "moc_fail.cpp"
 diff --git a/src/wizard/pages/fail.h b/src/wizard/pages/fail.h
 deleted file mode 100644
-index 4a6a3fbe..00000000
+index 4a6a3fb..0000000
 --- a/src/wizard/pages/fail.h
 +++ /dev/null
 @@ -1,29 +0,0 @@
@@ -11135,7 +11147,7 @@ index 4a6a3fbe..00000000
 -};
 diff --git a/src/wizard/pages/fail.ui b/src/wizard/pages/fail.ui
 deleted file mode 100644
-index 672e84fe..00000000
+index 672e84f..0000000
 --- a/src/wizard/pages/fail.ui
 +++ /dev/null
 @@ -1,74 +0,0 @@
@@ -11215,7 +11227,7 @@ index 672e84fe..00000000
 -</ui>
 diff --git a/src/wizard/pages/pairing.cpp b/src/wizard/pages/pairing.cpp
 deleted file mode 100644
-index 81aa14f7..00000000
+index 81aa14f..0000000
 --- a/src/wizard/pages/pairing.cpp
 +++ /dev/null
 @@ -1,157 +0,0 @@
@@ -11378,7 +11390,7 @@ index 81aa14f7..00000000
 -#include "moc_pairing.cpp"
 diff --git a/src/wizard/pages/pairing.h b/src/wizard/pages/pairing.h
 deleted file mode 100644
-index 1f278bd5..00000000
+index 1f278bd..0000000
 --- a/src/wizard/pages/pairing.h
 +++ /dev/null
 @@ -1,45 +0,0 @@
@@ -11429,7 +11441,7 @@ index 1f278bd5..00000000
 -};
 diff --git a/src/wizard/pages/pairing.ui b/src/wizard/pages/pairing.ui
 deleted file mode 100644
-index 0c771c95..00000000
+index 0c771c9..0000000
 --- a/src/wizard/pages/pairing.ui
 +++ /dev/null
 @@ -1,173 +0,0 @@
@@ -11608,7 +11620,7 @@ index 0c771c95..00000000
 -</ui>
 diff --git a/src/wizard/pages/success.cpp b/src/wizard/pages/success.cpp
 deleted file mode 100644
-index 0c566628..00000000
+index 0c56662..0000000
 --- a/src/wizard/pages/success.cpp
 +++ /dev/null
 @@ -1,53 +0,0 @@
@@ -11667,7 +11679,7 @@ index 0c566628..00000000
 -#include "moc_success.cpp"
 diff --git a/src/wizard/pages/success.h b/src/wizard/pages/success.h
 deleted file mode 100644
-index 81fa636f..00000000
+index 81fa636..0000000
 --- a/src/wizard/pages/success.h
 +++ /dev/null
 @@ -1,31 +0,0 @@
@@ -11704,7 +11716,7 @@ index 81fa636f..00000000
 -};
 diff --git a/src/wizard/pages/success.ui b/src/wizard/pages/success.ui
 deleted file mode 100644
-index 33f14d69..00000000
+index 33f14d6..0000000
 --- a/src/wizard/pages/success.ui
 +++ /dev/null
 @@ -1,74 +0,0 @@
@@ -11784,7 +11796,7 @@ index 33f14d69..00000000
 -</ui>
 diff --git a/src/wizard/pin-code-database.xml b/src/wizard/pin-code-database.xml
 deleted file mode 100644
-index b2e3ef28..00000000
+index b2e3ef2..0000000
 --- a/src/wizard/pin-code-database.xml
 +++ /dev/null
 @@ -1,159 +0,0 @@
@@ -11949,7 +11961,7 @@ index b2e3ef28..00000000
 -</devices>
 diff --git a/src/wizard/wizardagent.cpp b/src/wizard/wizardagent.cpp
 deleted file mode 100644
-index 9773dfdd..00000000
+index 9773dfd..0000000
 --- a/src/wizard/wizardagent.cpp
 +++ /dev/null
 @@ -1,151 +0,0 @@
@@ -12106,7 +12118,7 @@ index 9773dfdd..00000000
 -#include "moc_wizardagent.cpp"
 diff --git a/src/wizard/wizardagent.h b/src/wizard/wizardagent.h
 deleted file mode 100644
-index 1468806d..00000000
+index 1468806..0000000
 --- a/src/wizard/wizardagent.h
 +++ /dev/null
 @@ -1,40 +0,0 @@
@@ -12152,7 +12164,7 @@ index 1468806d..00000000
 -};
 diff --git a/src/floss/CMakeLists.txt b/src/floss/CMakeLists.txt
 new file mode 100644
-index 00000000..9e4754eb
+index 0000000..9e4754e
 --- /dev/null
 +++ b/src/floss/CMakeLists.txt
 @@ -0,0 +1,18 @@
@@ -12176,7 +12188,7 @@ index 00000000..9e4754eb
 +install(TARGETS bluedevil-floss-pairing DESTINATION ${KDE_INSTALL_BINDIR})
 diff --git a/src/floss/DeviceNameDialog.qml b/src/floss/DeviceNameDialog.qml
 new file mode 100644
-index 00000000..12b896bf
+index 0000000..12b896b
 --- /dev/null
 +++ b/src/floss/DeviceNameDialog.qml
 @@ -0,0 +1,26 @@
@@ -12208,7 +12220,7 @@ index 00000000..12b896bf
 +}
 diff --git a/src/floss/PairingWindow.qml b/src/floss/PairingWindow.qml
 new file mode 100644
-index 00000000..75eb1f6e
+index 0000000..75eb1f6
 --- /dev/null
 +++ b/src/floss/PairingWindow.qml
 @@ -0,0 +1,97 @@
@@ -12311,7 +12323,7 @@ index 00000000..75eb1f6e
 +}
 diff --git a/src/floss/README.md b/src/floss/README.md
 new file mode 100644
-index 00000000..e63782dd
+index 0000000..e63782d
 --- /dev/null
 +++ b/src/floss/README.md
 @@ -0,0 +1,134 @@
@@ -12451,7 +12463,7 @@ index 00000000..e63782dd
 +unavailable rather than guessed. The desktop never opens /dev/rfkill itself.
 diff --git a/src/floss/flossbackend.cpp b/src/floss/flossbackend.cpp
 new file mode 100644
-index 00000000..71ab5e6b
+index 0000000..71ab5e6
 --- /dev/null
 +++ b/src/floss/flossbackend.cpp
 @@ -0,0 +1,590 @@
@@ -13047,7 +13059,7 @@ index 00000000..71ab5e6b
 +#include "moc_flossbackend.cpp"
 diff --git a/src/floss/flossbackend.h b/src/floss/flossbackend.h
 new file mode 100644
-index 00000000..57d86079
+index 0000000..57d8607
 --- /dev/null
 +++ b/src/floss/flossbackend.h
 @@ -0,0 +1,129 @@
@@ -13182,7 +13194,7 @@ index 00000000..57d86079
 +};
 diff --git a/src/floss/flossdevices.cpp b/src/floss/flossdevices.cpp
 new file mode 100644
-index 00000000..6fb0f3bf
+index 0000000..6fb0f3b
 --- /dev/null
 +++ b/src/floss/flossdevices.cpp
 @@ -0,0 +1,155 @@
@@ -13343,7 +13355,7 @@ index 00000000..6fb0f3bf
 +}
 diff --git a/src/floss/flosspolicy.cpp b/src/floss/flosspolicy.cpp
 new file mode 100644
-index 00000000..613663ba
+index 0000000..613663b
 --- /dev/null
 +++ b/src/floss/flosspolicy.cpp
 @@ -0,0 +1,12 @@
@@ -13361,7 +13373,7 @@ index 00000000..613663ba
 +}
 diff --git a/src/floss/flossreconnect.cpp b/src/floss/flossreconnect.cpp
 new file mode 100644
-index 00000000..f9c20655
+index 0000000..f9c2065
 --- /dev/null
 +++ b/src/floss/flossreconnect.cpp
 @@ -0,0 +1,204 @@
@@ -13571,7 +13583,7 @@ index 00000000..f9c20655
 +}
 diff --git a/src/floss/flossreconnect.h b/src/floss/flossreconnect.h
 new file mode 100644
-index 00000000..6142f31f
+index 0000000..6142f31
 --- /dev/null
 +++ b/src/floss/flossreconnect.h
 @@ -0,0 +1,36 @@
@@ -13613,7 +13625,7 @@ index 00000000..6142f31f
 +};
 diff --git a/src/floss/flossrfkill.cpp b/src/floss/flossrfkill.cpp
 new file mode 100644
-index 00000000..534cc9b2
+index 0000000..534cc9b
 --- /dev/null
 +++ b/src/floss/flossrfkill.cpp
 @@ -0,0 +1,116 @@
@@ -13735,7 +13747,7 @@ index 00000000..534cc9b2
 +}
 diff --git a/src/floss/pairingagent.cpp b/src/floss/pairingagent.cpp
 new file mode 100644
-index 00000000..8661bf5d
+index 0000000..8661bf5
 --- /dev/null
 +++ b/src/floss/pairingagent.cpp
 @@ -0,0 +1,37 @@

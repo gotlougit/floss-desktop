@@ -211,3 +211,12 @@ the permanent fix. No live services were replaced during isolated testing.
 Before building with limited bandwidth, inspect `nix build --dry-run` and review
 all missing inputs. `--offline` does **not** prevent fixed-output derivations
 from downloading their sources when Nix decides to build missing dependencies.
+
+### Headset playback buttons
+
+The module enables Linux uinput and grants only the Floss adapter service access
+to `/dev/uinput`, retaining its closed device policy. Floss translates AVRCP
+play/pause and track commands into media keys for the desktop. No additional
+user group membership or media-control bridge is required. After deploying this
+change, reconnect the headset so Floss can create its `(AVRCP)` input device.
+Hardware button handling still needs verification in the active desktop session.

@@ -161,6 +161,8 @@ in {
         }
       });
     '';
+    # AVRCP headset buttons are delivered as Linux media keys by Floss.
+    hardware.uinput.enable = true;
     boot.kernelModules = [ "bluetooth" "btusb" "uhid" ] ++ lib.optional cfg.floss.usbTransport.enable "hci_vhci";
     systemd.tmpfiles.rules = [
       "d /run/bluetooth 0750 floss bluetooth - -"
@@ -254,8 +256,8 @@ in {
         LimitRTPRIO = 1;
         LimitRTTIME = 200000;
         DevicePolicy = "closed";
-        DeviceAllow = [ "/dev/uhid rw" ];
-        SupplementaryGroups = common.SupplementaryGroups ++ [ "floss-codec" ];
+        DeviceAllow = [ "/dev/uhid rw" "/dev/uinput rw" ];
+        SupplementaryGroups = common.SupplementaryGroups ++ [ "floss-codec" "uinput" ];
       };
     };
     systemd.services.floss-codec = {

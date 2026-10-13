@@ -2,7 +2,9 @@
 pkgs.llvmPackages.stdenv.mkDerivation {
   pname = if buildCodec then "floss-codec" else "floss-native";
   inherit version;
-  inherit src patches;
+  inherit src;
+  patches = patches
+    ++ pkgs.lib.optionals (!buildCodec) [ ../patches/bluetooth-native.patch ];
   unpackPhase = ''
     runHook preUnpack
     mkdir -p source/bt
@@ -14,13 +16,6 @@ pkgs.llvmPackages.stdenv.mkDerivation {
   nativeBuildInputs = with pkgs; [ gn ninja pkg-config python3 bison flex protobuf flatbuffers deps.cxxbridge generators.aconfig generators.sysprop_cpp ];
   buildInputs = with pkgs; [ deps.libchrome deps.modp dbus openssl tinyxml-2 fmt liblc3 flatbuffers protobuf zlib gtest abseil-cpp libevent glib double-conversion re2 nss ]
     ++ pkgs.lib.optionals buildCodec [ ffmpeg-headless ldacbt ];
-  postPatch = pkgs.lib.optionalString (!buildCodec) ''
-    # The stack needs MMC clients/protocols, not the standalone codec daemon.
-    # That daemon is built by the separate floss-codec derivation with its own
-    # service patches and encoder dependencies.
-    substituteInPlace system/stack/mmc/BUILD.gn \
-      --replace-fail '    ":mmc_service",' ""
-  '';
   configurePhase = ''
     runHook preConfigure
     export FLOSS_PLATFORM_ROOT="$(realpath ..)"

@@ -30,6 +30,11 @@
           module-evaluation =
             assert report.failedAssertions == [];
             assert !report.bluezService;
+            assert report.mediaKeys.uinputEnabled;
+            assert builtins.elem "uinput" report.mediaKeys.kernelModules;
+            assert builtins.elem "/dev/uinput rw" report.adapter.DeviceAllow;
+            assert builtins.elem "uinput" report.adapter.SupplementaryGroups;
+            assert report.adapter.DevicePolicy == "closed";
             assert report.kernelPatches == [];
             assert builtins.elem "plasma-pa-microphone-lifecycle.patch" report.desktopAudioPatches.plasmaPa;
             # This is an evaluation report, not a request to realize every

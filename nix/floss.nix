@@ -34,8 +34,6 @@ in (pkgs.rustPlatform.buildRustPackage.override { stdenv = pkgs.llvmPackages.std
   cargoLock.lockFile = ./floss-Cargo.lock;
   postPatch = ''
     cp ${./floss-Cargo.lock} Cargo.lock
-    substituteInPlace system/gd/rust/linux/{service,mgmt}/build.rs \
-      --replace-fail 'cargo:rustc-link-lib=c++' 'cargo:rustc-link-lib=stdc++'
   '';
   dontUseCmakeConfigure = true;
   dontUseNinjaBuild = true;

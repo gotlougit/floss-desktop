@@ -1,0 +1,15 @@
+The native archive only needs the MMC client and protocol targets. Drop the
+standalone codec daemon from the default target group so the native derivation
+does not pull in the codec server; the separate floss-codec derivation applies
+the codec-service patch and builds the daemon explicitly.
+
+--- a/system/stack/mmc/BUILD.gn
++++ b/system/stack/mmc/BUILD.gn
+@@ -23,7 +23,6 @@ group("mmc") {
+     ":install_minijail_config",
+     ":install_system_service",
+     ":install_tmpfiles_config",
+-    ":mmc_service",
+     "//bt/system/stack/mmc/codec_client:libcodec_client",
+     "//bt/system/stack/mmc/proto:mmc_config_proto",
+   ]
